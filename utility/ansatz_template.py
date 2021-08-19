@@ -105,7 +105,7 @@ class AnsatzTemplate():
         # self.PQC = qc
 
         self.num_qubits = num_qubits
-        twolocal = qiskit.circuit.library.TwoLocal(self.num_qubits, ['rx', 'ry'], 'cx', 'linear', reps=num_layers)
+        twolocal = qiskit.circuit.library.TwoLocal(self.num_qubits, ['rx', 'ry'], 'cx', 'circular', reps=num_layers)
         qc = QuantumCircuit(self.num_qubits).compose(twolocal)
         self.PQC = qc.decompose()
 

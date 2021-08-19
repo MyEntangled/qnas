@@ -8,6 +8,7 @@ UNITARY = {0: qml.Identity, 1: qml.RX, 2: qml.RY, 3: qml.RZ, 4: qml.CNOT, 5: qml
 NUM_param_PER_GATE = {0: 0, 1: 1, 2: 1, 3: 1, 4: 0, 5: 0}
 TWO_QUBIT_GATE_TYPE = ['CNOT']
 
+
 def PQC_function(wires, param):
 
     for wire in range(wires):
@@ -56,6 +57,7 @@ def circuit_to_tensor(template):
             embedding[time_idx, qubit, gate_type_idx] = 1
 
     return embedding
+
 
 def tensor_to_circuit(embedding):
     '''
