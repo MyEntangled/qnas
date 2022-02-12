@@ -10,52 +10,6 @@ from utility.data_encoding import FeatureMap
 from utility.quantum_nn import QuantumNeuralNetwork
 from utility.tools import *
 
-np.random.seed(0)
-
-
-def PQC_function(wires, param):
-    """
-
-    :param wires:
-    :param param:
-    :return:
-    """
-
-    for wire in range(wires):
-        qml.Hadamard(wires=wire)
-
-    param = iter(param)
-
-    for wire in range(wires):
-        qml.RX(next(param), wires=wire)
-        qml.RY(next(param), wires=wire)
-
-    for wire in range(wires - 1):
-        qml.CNOT(wires=[wire, wire + 1])
-
-    for wire in range(wires):
-        qml.RX(next(param), wires=wire)
-        qml.RY(next(param), wires=wire)
-
-
-def find_output_state(template, dev, wires, *args, **kwargs):
-    """
-
-    :param template:
-    :param dev:
-    :param wires:
-    :param args:
-    :param kwargs:
-    :return:
-    """
-
-    @qml.qnode(dev)
-    def circuit(wires, *args, **kwargs):
-        template(wires, *args, **kwargs)
-        return qml.state()
-
-    return circuit(wires, *args, **kwargs)
-
 
 def sample_haar(dim, num_samples):
     """
@@ -133,46 +87,46 @@ def KL_knn_estimator(s1, s2, knn=1):
     return D
 
 
-def compute_expressibility(template, wires, num_samples, num_iterations):
-    '''
-    Return expressibility score of the template PQC
-    :param template: predefined PQC
-    :param wires: number of qubits
-    :param num_samples: number of iterations
-    :return: KL divergence between Haar distribution and empirical fidelity distribution
-    '''
-
-    dev = qml.device('default.qubit', wires=wires)
-
-    state_dim = 2 ** wires
-    param_dim = wires * 4
-
-    s = 0
-
-    for iteration in range(num_iterations):
-
-        PQC_samples = []
-
-        ## This sampling part is extremely time-consuming.
-        ## Fix: Adopt qiskit.evolve + multiprocessing
-        for sample in range(num_samples):
-            param = np.random.uniform(0, 2 * np.pi, param_dim)
-            state_1 = find_output_state(template, dev, wires, param)
-
-            param = np.random.uniform(0, 2 * np.pi, param_dim)
-            state_2 = find_output_state(template, dev, wires, param)
-
-            F = abs(state_1.conj().T @ state_2) ** 2
-            PQC_samples.append(F)
-
-        PQC_samples = np.array(PQC_samples)
-        haar_samples = sample_haar(state_dim, num_samples)
-
-        s += KL_knn_estimator(PQC_samples, haar_samples, knn=1)
-
-    mean_expr = s / num_iterations
-
-    return min(mean_expr, state_dim)
+# def compute_expressibility(template, wires, num_samples, num_iterations):
+#     '''
+#     Return expressibility score of the template PQC
+#     :param template: predefined PQC
+#     :param wires: number of qubits
+#     :param num_samples: number of iterations
+#     :return: KL divergence between Haar distribution and empirical fidelity distribution
+#     '''
+#
+#     dev = qml.device('default.qubit', wires=wires)
+#
+#     state_dim = 2 ** wires
+#     param_dim = wires * 4
+#
+#     s = 0
+#
+#     for iteration in range(num_iterations):
+#
+#         PQC_samples = []
+#
+#         ## This sampling part is extremely time-consuming.
+#         ## Fix: Adopt qiskit.evolve + multiprocessing
+#         for sample in range(num_samples):
+#             param = np.random.uniform(0, 2 * np.pi, param_dim)
+#             state_1 = find_output_state(template, dev, wires, param)
+#
+#             param = np.random.uniform(0, 2 * np.pi, param_dim)
+#             state_2 = find_output_state(template, dev, wires, param)
+#
+#             F = abs(state_1.conj().T @ state_2) ** 2
+#             PQC_samples.append(F)
+#
+#         PQC_samples = np.array(PQC_samples)
+#         haar_samples = sample_haar(state_dim, num_samples)
+#
+#         s += KL_knn_estimator(PQC_samples, haar_samples, knn=1)
+#
+#     mean_expr = s / num_iterations
+#
+#     return min(mean_expr, state_dim)
 
 
 def _get_expr(inds, params, model, results):
@@ -258,22 +212,6 @@ def get_expressibility(model, num_samples: int, num_iterations: Union[int, List,
 
 if __name__ == '__main__':
 
-    # import csv
-    #
-    # MAX_NUM_LAYERS = 20
-    # NUM_QUBITS = 4
-    #
-    # feature_map = FeatureMap('ZZFeatureMap', feature_dim=NUM_QUBITS, reps=1)
-    # template = AnsatzTemplate()
-    # for num_layers in range(1, MAX_NUM_LAYERS + 1):
-    #     template.construct_simple_template(num_qubits=NUM_QUBITS, num_layers=num_layers)
-    #     model = QuantumNeuralNetwork(feature_map, template, platform='Qiskit')
-    #     expr = get_expressibility(model, num_samples=2000, num_iterations=3)
-    #     with open('circuit-data/zz4-expressibility.csv', 'a', newline='') as csvfile:
-    #         writer = csv.writer(csvfile, delimiter=',',)
-    #         # each line: number of layers, expressibility
-    #         writer.writerow([num_layers, expr])
-
     feature_map = FeatureMap('PauliFeatureMap', 4, 1)
 
     template = AnsatzTemplate()
@@ -285,12 +223,8 @@ if __name__ == '__main__':
     print(model.num_qubits, model.input_dim, model.param_dim)
 
     new_expr = []
-    # old_expr = []
 
     start_time = time.time()
-
-    # for iteration in range(step,iterations,step):
-    #     new_expr.append(get_expressibility(model, 100, iteration))
 
     sample_range = range(10000,10001,10000)
 
@@ -299,12 +233,6 @@ if __name__ == '__main__':
 
     print("--- %s seconds ---" % (time.time() - start_time))
 
-    # start_time = time.time()
-    # for iteration in range(step,iterations,step):
-    #     old_expr.append(compute_expressibility(PQC_function, wires=2, num_samples=100, num_iterations=iteration))
-    #
-    # print("--- %s seconds ---" % (time.time() - start_time))
-
     plt.plot(sample_range, new_expr, label='new method')
     # plt.plot(range(step,iterations,step), old_expr, label='used method')
     plt.xlabel("Number of fidelity samples")
@@ -312,26 +240,3 @@ if __name__ == '__main__':
     plt.show()
 
     print(new_expr)
-
-
-    # start_time = time.time()
-    # wires = 2
-    #
-    # expr = []
-
-    # for num_samples in range(100,101,100):
-    #     expr.append(compute_expressibility(PQC_function, wires, num_samples, num_iterations=100))
-
-    # plt.plot(range(iterations), mean_kl)
-    # plt.xlabel('Iterations')
-    # plt.title('Divergence between Exp(1) and Exp(12) with {} samples'.format(num_samples))
-    # plt.title('Divergence between P_PQC(F) and P_haar(F) for N = {} with {} samples'.format(2**wires, num_samples))
-    # plt.show()
-
-    # plt.scatter(range(100,101,100), expr)
-    # plt.xlabel('Number of samples')
-    # plt.ylabel('Average expressibility')
-    # plt.show()
-    #
-    # print(expr)
-    # print("--- %s seconds ---" % (time.time() - start_time))

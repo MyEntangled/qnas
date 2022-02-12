@@ -2,7 +2,6 @@ import numpy as np
 from qiskit import QuantumCircuit
 from qiskit.circuit import ParameterVector
 
-from QuOTMANN import optimal_transport
 from QuOTMANN.gate_info import SINGLE_QUBIT_DETERMINISTIC_GATES, \
     SINGLE_QUBIT_VARIATIONAL_GATES, \
     TWO_QUBIT_DETERMINISTIC_GATES, \
@@ -14,10 +13,14 @@ from QuOTMANN.gate_info import SINGLE_QUBIT_DETERMINISTIC_GATES, \
 
 INV_OP_NODE_DICT = {v:k for k,v in OP_NODE_DICT.items()}
 OP_VALUES = np.array(list(OP_NODE_DICT.values()))
+OP_VALUES_1Q = np.array([val for node,val in OP_NODE_DICT.items() if node in SINGLE_QUBIT_DETERMINISTIC_GATES or node in SINGLE_QUBIT_VARIATIONAL_GATES])
 
-def qc_to_enc(qc, MAX_OP_NODES:int = None):
+def qc_to_enc(qc: QuantumCircuit, MAX_OP_NODES:int = None) -> np.ndarray:
     if MAX_OP_NODES is None:
         MAX_OP_NODES = qc.size()
+    else:
+        if MAX_OP_NODES < qc.size():
+            raise ValueError(f'MAX_OP_NODES ({MAX_OP_NODES}) is necessarily greater than or equal to the number of quantum operations ({qc.size()})')
 
     encoding = np.zeros((qc.num_qubits + 1, MAX_OP_NODES)) # later flattened
 
@@ -40,7 +43,7 @@ def qc_to_enc(qc, MAX_OP_NODES:int = None):
 
     return encoding.ravel()
 
-def enc_to_qc(num_qubits, encoding):
+def enc_to_qc(num_qubits: int, encoding: np.ndarray) -> QuantumCircuit:
     encoding = encoding.reshape(num_qubits+1, -1)
     qc = QuantumCircuit(num_qubits)
     theta = ParameterVector('theta',0)
@@ -50,8 +53,13 @@ def enc_to_qc(num_qubits, encoding):
         if code <= 0:
             infolist.append('none')
         else: ## code > 0
-            closest_mark = OP_VALUES[np.abs(OP_VALUES - code).argmin()]
-            infolist.append(INV_OP_NODE_DICT[closest_mark])
+            if num_qubits > 1:
+                closest_mark = OP_VALUES[np.abs(OP_VALUES - code).argmin()]
+                infolist.append(INV_OP_NODE_DICT[closest_mark])
+            else:
+                closest_mark = OP_VALUES_1Q[np.abs(OP_VALUES_1Q - code).argmin()]
+                infolist.append(INV_OP_NODE_DICT[closest_mark])
+
 
     for idx,gatename in enumerate(infolist):
 

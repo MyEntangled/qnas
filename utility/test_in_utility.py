@@ -1,11 +1,15 @@
-from QNN.ansatz_template import AnsatzTemplate
-from QNN.data_encoding import FeatureMap
-from QNN.quantum_nn import QuantumNeuralNetwork
+from utility.ansatz_template import AnsatzTemplate
+from utility.data_encoding import FeatureMap
+from utility.quantum_nn import QuantumNeuralNetwork
 
 from qiskit.opflow import I,X,Y,Z
+from qiskit.opflow.primitive_ops import CircuitOp
 
 import numpy as np
 import time
+
+from qiskit.circuit.library import QFT
+from qiskit.quantum_info import Statevector
 
 if __name__ == '__main__':
     np.random.seed(0)
@@ -17,7 +21,7 @@ if __name__ == '__main__':
     template = AnsatzTemplate()
     template.construct_simple_template(num_qubits=3, num_layers=1)
 
-    model = QuantumNeuralNetwork(feature_map, template, platform='Qiskit')
+    model = QuantumNeuralNetwork(None, template)
 
     model.visualize()
 
@@ -30,7 +34,7 @@ if __name__ == '__main__':
     param_dim = 12
     thetamin = 0
     thetamax = 2 * np.pi
-    input_dim = 8
+    input_dim = 4
 
     rep_range = np.tile(np.array([num_inputs]), num_params)
     params = np.random.uniform(thetamin, thetamax, size=(num_params, param_dim))
@@ -38,7 +42,11 @@ if __name__ == '__main__':
     inputs = np.random.normal(0, 1, size=(num_inputs, input_dim))
     grid_inputs = np.tile(inputs, (num_params, 1))
 
-    output_states, output_exps = model.forward(grid_inputs, grid_params, observables=[I^3,I^I^X])
+    init_state = Statevector.from_label('1' * 3)
+    qft_circ = QFT(num_qubits=3, approximation_degree=0, do_swaps=True, inverse=False, insert_barriers=False, name=None)
+    #qft_state = init_state.evolve(qft_circ)
+    qft_projector = CircuitOp(qft_circ)
+    output_states, output_exps = model.forward(grid_inputs, grid_params, observables=[qft_projector,I^3,I^I^X])
     print('TEST FORWARD')
     #print(output_states.shape, output_exps.shape)
     #print(np.sum(output_exps, axis=1))
@@ -49,7 +57,7 @@ if __name__ == '__main__':
     observables = ['0' * model.num_qubits, '1' * model.num_qubits]
     #output_grads = model.get_gradients(grid_inputs, grid_params,
     #                                   observables='all')  # observables = 'all' for every measurement
-    output_grads = model.get_gradients(grid_inputs, grid_params, observables=[I^3,I^I^X])
+    output_grads = model.get_gradients(grid_inputs, grid_params, observables=[qft_projector,I^3,I^I^X])
     print('TEST GRADIENT')
     print(output_grads.shape)
     # print(output_grads)

@@ -429,6 +429,6 @@ if __name__ == '__main__':
 
 
     print("Are two graphs isomorphic: ", nx.algorithms.isomorphism.is_isomorphic(dag.to_networkx(), circuit_to_dag(rec_qc).to_networkx()))
-    print("QuOTMANN distance: ", optimal_transport.program(qc, rec_qc))
+    print("QuOTMANN distance: ", optimal_transport.circuit_distance(qc, rec_qc))
     #
     # print('-----------------')

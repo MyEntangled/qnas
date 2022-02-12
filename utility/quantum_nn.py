@@ -1,17 +1,17 @@
 import numpy as np
 from qiskit import QuantumCircuit
 from typing import List, Union
-from qiskit.quantum_info import Statevector
+from qiskit.quantum_info import Statevector, Operator
 import multiprocessing as mp
-from QNN.model_base import Model
-import pennylane as qml
-from QNN.ansatz_template import AnsatzTemplate
-from QNN.data_encoding import FeatureMap
+from utility.model_base import Model
+
+from utility.ansatz_template import AnsatzTemplate
+from utility.data_encoding import FeatureMap
 from qiskit.opflow import I, X, Y, Z
 from surfer.gradient import ReverseGradient
 from surfer.qfi import ReverseQFI
 import time
-from QNN.tools import *
+from utility.tools import (prepare_multiprocesses, compose_param_dict, get_measurement_operator, generate_bitstrings, get_parity_observables)
 
 np.random.seed(0)
 
@@ -129,9 +129,15 @@ class QuantumNeuralNetwork(Model):
             return output_states, output_exps
 
         else: ## list of operators
-            observable_ops = observables
-            output_exps = np.zeros((num_inputs, len(observable_ops)), dtype=np.complex_)
-            observables_mats = np.array([ob.to_matrix() for ob in observable_ops])
+            output_exps = np.zeros((num_inputs, len(observables)), dtype=np.complex_)
+            observables_mats = []
+            for ob in observables:
+                try:
+                    observables_mats.append(ob.to_matrix())
+                except:
+                    observables_mats.append(ob.data)
+            observables_mats = np.array(observables_mats)
+            #observables_mats = np.array([ob.to_matrix() for ob in observable_ops])
             for i in range(num_inputs):
                 start = i * state_dim
                 end = (i + 1) * state_dim
@@ -150,7 +156,6 @@ class QuantumNeuralNetwork(Model):
             circuit_ = self.circuit.bind_parameters(input_dict)
 
             grad = self.rev_grad.compute(operator, circuit_, param)
-
             start = i * self.param_dim
             end = (i + 1) * self.param_dim
 
@@ -368,7 +373,6 @@ class QuantumNeuralNetwork(Model):
 
 if __name__ == '__main__':
     feature_map = FeatureMap('ZZFeatureMap', feature_dim=4, reps=1)
-
     #feature_map.visualize()
     #print(feature_map.circ)
 
@@ -396,43 +400,66 @@ if __name__ == '__main__':
     inputs = np.random.normal(0, 1, size=(num_inputs, input_dim))
     grid_inputs = np.tile(inputs, (num_params, 1))
 
-    output_states, output_exps = model.forward(grid_inputs, grid_params, observables=[I^4,I^I^I^X])
+    ## QFT observable
+    from qiskit.circuit.library import QFT
+    from qiskit.quantum_info import Statevector
+    from qiskit.opflow.primitive_ops import CircuitOp, MatrixOp
+    from qiskit.opflow import StateFn, OperatorStateFn
+
+    qft_circ = QFT(num_qubits=4, approximation_degree=0, do_swaps=True, inverse=False, insert_barriers=False, name=None)
+    input_state = Statevector.from_label('0000')
+    qft_state = input_state.evolve(qft_circ)
+    qft_projector = qft_state.to_operator()
+
+    output_states, output_exps = model.forward(grid_inputs, grid_params, observables=[qft_projector, I^4,I^I^I^X])
     print('TEST FORWARD')
-    #print(output_states.shape, output_exps.shape)
-    #print(np.sum(output_exps, axis=1))
+    print(output_states.shape, output_exps.shape)
+    print(output_exps[0])
     print('------------------------')
 
-    ######## Test get_gradients(): compute output gradients for final measurement in standard basis
+    # ######## Test get_gradients(): compute output gradients for final measurement in standard basis
+    # start_time = time.time()
+    # observables = ['0' * model.num_qubits, '1' * model.num_qubits]
+    # #output_grads = model.get_gradients(grid_inputs, grid_params,
+    # #                                   observables='all')  # observables = 'all' for every measurement
+    # output_grads = model.get_gradients(grid_inputs, grid_params, observables=[I^4,I^I^I^X])
+    # print('TEST GRADIENT')
+    # print(output_grads.shape)
+    # # print(output_grads)
+    # print("--- %s seconds ---" % (time.time() - start_time))
+    # print('------------------------')
+
+    ######## Test get_gradients(): compute gradients for QFT projector observable
+
+
     start_time = time.time()
-    observables = ['0' * model.num_qubits, '1' * model.num_qubits]
-    #output_grads = model.get_gradients(grid_inputs, grid_params,
-    #                                   observables='all')  # observables = 'all' for every measurement
-    output_grads = model.get_gradients(grid_inputs, grid_params, observables=[I^4,I^I^I^X])
+    output_grads = model.get_gradients(grid_inputs, grid_params, observables=[qft_projector])
     print('TEST GRADIENT')
     print(output_grads.shape)
-    # print(output_grads)
+    print(output_grads)
     print("--- %s seconds ---" % (time.time() - start_time))
     print('------------------------')
 
-    ######## Test get_fishers(): compute QFI
-    start_time = time.time()
-    output_fishers = model.get_quantum_fishers(grid_inputs, grid_params)
-    print('TEST QFI')
-    print(output_fishers.shape)
-    print(output_fishers)
-    print("--- %s seconds ---" % (time.time() - start_time))
 
-    ######## Test empirical info Fishers
-    start_time = time.time()
-    empirical_info_fishers = model.get_empirical_fishers('info', 3, 5, 'input', trace_normalize=True, observables='parity')
-    print('TEST EMPIRICAL CFI')
-    print(empirical_info_fishers.shape)
-    print("--- %s seconds ---" % (time.time() - start_time))
-
-    ######## Test empirical quantum Fishers
-    start_time = time.time()
-    print('TEST EMPIRICAL QFI')
-    empirical_quantum_fishers = model.get_empirical_fishers('quantum', 3, 5, 'input', trace_normalize=True)
-    print(empirical_quantum_fishers.shape)
-    #print(empirical_quantum_fishers)
-    print("--- %s seconds ---" % (time.time() - start_time))
+    # ######## Test get_fishers(): compute QFI
+    # start_time = time.time()
+    # output_fishers = model.get_quantum_fishers(grid_inputs, grid_params)
+    # print('TEST QFI')
+    # print(output_fishers.shape)
+    # print(output_fishers)
+    # print("--- %s seconds ---" % (time.time() - start_time))
+    # 
+    # ######## Test empirical info Fishers
+    # start_time = time.time()
+    # empirical_info_fishers = model.get_empirical_fishers('info', 3, 5, 'input', trace_normalize=True, observables='parity')
+    # print('TEST EMPIRICAL CFI')
+    # print(empirical_info_fishers.shape)
+    # print("--- %s seconds ---" % (time.time() - start_time))
+    # 
+    # ######## Test empirical quantum Fishers
+    # start_time = time.time()
+    # print('TEST EMPIRICAL QFI')
+    # empirical_quantum_fishers = model.get_empirical_fishers('quantum', 3, 5, 'input', trace_normalize=True)
+    # print(empirical_quantum_fishers.shape)
+    # #print(empirical_quantum_fishers)
+    # print("--- %s seconds ---" % (time.time() - start_time))

@@ -42,12 +42,12 @@ class PQCNet(Module):
         self.qnn = TwoLayerQNN(feature_map=model.feature_map_circ, ansatz=model.PQC,
                                input_gradients=True, exp_val=AerPauliExpectation(), quantum_instance=qi)
 
-        # 1-dimensional input to QNN
+        # 1-dimensional input to utility
         self.qnn = TorchConnector(self.qnn)  # Apply torch connector, weights chosen
                                          # uniformly at random from interval [-1,1].
 
     def forward(self, x):
-        x = self.qnn(x)  # apply QNN
+        x = self.qnn(x)  # apply utility
         #return cat((x, 1 - x), -1)
         return x
 

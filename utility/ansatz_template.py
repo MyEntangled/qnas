@@ -7,54 +7,13 @@ import qiskit
 
 class AnsatzTemplate():
 
-    def __init__(self, PQC=None, type='Qiskit'):
+    def __init__(self, PQC=None):
         if PQC:
-
-            if type == 'Qiskit':
-                self.PQC = PQC
-                self.num_qubits = PQC.num_qubits
-
-            elif type == 'Pennylane':
-                assert isinstance(PQC, qml.QNode), "PQC must be defined as a QNode"
-
-                self.num_qubits = len(PQC.device.wires)
-
-                func = PQC.func
-                dev = qml.device("qiskit.aer", wires=self.num_qubits)  ## switch device to qiskit.aer
-                placeholder_param = np.zeros(10000)  ## a big array just to make sure it suffice for every param
-
-                qnode = qml.QNode(func, dev)
-                qnode(placeholder_param)  ## initiate qnode
-                assert qnode.specs['num_device_wires'] == qnode.specs[
-                    'num_used_wires'], "Number of used qubits must be equal to number of device qubits"
-
-                temp_qc = dev._circuit
-                temp_qc.remove_final_measurements()
-
-                param_dim = qnode.specs['num_trainable_params']
-                theta = ParameterVector('θ', param_dim)
-
-                qc = QuantumCircuit(self.num_qubits)
-
-                i = 0
-
-                for op in temp_qc.data:
-
-                    if len(op[0].params) > 1:
-                        raise Exception(
-                            'Pennylane quantum function must contain non-repeating single parameter gates only.')
-                    elif len(op[0].params) == 1:
-                        gate = op[0].__deepcopy__()
-                        gate.__init__(theta[i])
-                        qc.append(gate, op[1])
-                        i += 1
-                    else:
-                        gate = op[0].__deepcopy__()
-                        qc.append(gate, op[1])
-
-                self.PQC = qc
+            self.PQC = PQC
+            self.num_qubits = PQC.num_qubits
 
         else:
+            print('hi')
             self.PQC = None
             self.num_qubits = None
 

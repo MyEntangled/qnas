@@ -1,9 +1,9 @@
 This is pdfTeX, Version 3.141592653-2.6-1.40.23 (TeX Live 2022/dev) (preloaded format=pdflatex)
  restricted \write18 enabled.
 entering extended mode
-(/var/folders/km/wpxhny5j6h7c_prrd3x7j1mc0000gn/T/tmp6tc7y1jw/circuit.tex
+(/var/folders/km/wpxhny5j6h7c_prrd3x7j1mc0000gn/T/tmpbe5gmm2j/circuit.tex
 LaTeX2e <2021-11-15>
-L3 programming layer <2021-11-12>
+L3 programming layer <2021-11-22>
 (/Users/trongduong/Library/TinyTeX/texmf-dist/tex/latex/standalone/standalone.c
 ls
 Document Class: standalone 2018/03/26 v1.3a Class to compile TeX sub-files stan
@@ -33,5 +33,5 @@ Enter file name:
 l.4 \usepackage
                {graphicx}^^M
 !  ==> Fatal error occurred, no output PDF file produced!
-Transcript written on /var/folders/km/wpxhny5j6h7c_prrd3x7j1mc0000gn/T/tmp6tc7y
-1jw/circuit.log.
+Transcript written on /var/folders/km/wpxhny5j6h7c_prrd3x7j1mc0000gn/T/tmpbe5gm
+m2j/circuit.log.
