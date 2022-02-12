@@ -1,6 +1,6 @@
-from utility.ansatz_template import AnsatzTemplate
-from utility.data_encoding import FeatureMap
-from utility.quantum_nn import QuantumNeuralNetwork
+from QNN.ansatz_template import AnsatzTemplate
+from QNN.data_encoding import FeatureMap
+from QNN.quantum_nn import QuantumNeuralNetwork
 
 from qiskit.opflow import I,X,Y,Z
 

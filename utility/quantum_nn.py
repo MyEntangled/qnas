@@ -3,38 +3,43 @@ from qiskit import QuantumCircuit
 from typing import List, Union
 from qiskit.quantum_info import Statevector
 import multiprocessing as mp
-from utility.model_base import Model
+from QNN.model_base import Model
 import pennylane as qml
-from utility.ansatz_template import AnsatzTemplate
-from utility.data_encoding import FeatureMap
+from QNN.ansatz_template import AnsatzTemplate
+from QNN.data_encoding import FeatureMap
 from qiskit.opflow import I, X, Y, Z
 from surfer.gradient import ReverseGradient
 from surfer.qfi import ReverseQFI
 import time
-from utility.tools import *
+from QNN.tools import *
 
 np.random.seed(0)
 
 
 class QuantumNeuralNetwork(Model):
 
-    def __init__(self, feature_map, template, platform='Qiskit'):
+    def __init__(self, feature_map, template):
 
-        assert feature_map.num_qubits == template.num_qubits, "Feature map and PQC must have the same number of qubits"
-        assert platform in ['Qiskit', 'Pennylane']
+        if feature_map is not None:
+            assert feature_map.num_qubits == template.num_qubits, "Feature map and PQC must have the same number of qubits"
 
         super(QuantumNeuralNetwork, self).__init__()
-        self.platform = platform
 
         self.num_qubits = template.num_qubits
         self.state_dim = 2 ** self.num_qubits
-        self.input_dim = feature_map.input_dim
+        if feature_map is not None:
+            self.input_dim = feature_map.input_dim
+        else:
+            self.input_dim = 0
         self.param_dim = len(template.PQC.parameters)
 
         self.param_min = 0
         self.param_max = 2*np.pi
 
-        self.feature_map_circ = feature_map.circ
+        if feature_map is not None:
+            self.feature_map_circ = feature_map.circ
+        else:
+            self.feature_map_circ = QuantumCircuit(self.num_qubits)
         self.PQC = template.PQC
         self.circuit = QuantumCircuit(self.num_qubits).compose(self.feature_map_circ).compose(self.PQC)
 
@@ -52,19 +57,7 @@ class QuantumNeuralNetwork(Model):
             param_dict = compose_param_dict(self.PQC.parameters, param)
             circuit_ = self.circuit.bind_parameters({**input_dict, **param_dict})
 
-            if self.platform == 'Qiskit':
-                result = self.sv.evolve(circuit_)
-
-            elif self.platform == 'Pennylane':
-
-                dev = qml.device('default.qubit', wires=self.num_qubits)
-
-                @qml.qnode(dev)
-                def quantum_circuit_with_loaded_subcircuit():
-                    qml.from_qiskit(circuit_)
-                    return qml.state()
-
-                result = quantum_circuit_with_loaded_subcircuit()
+            result = self.sv.evolve(circuit_)
 
             start = 2 * i * 2 ** self.num_qubits
             end = (2 * i + 2) * 2 ** self.num_qubits
@@ -150,7 +143,6 @@ class QuantumNeuralNetwork(Model):
     def _get_derivatives(self, inds, inputs, params, operator, results):
 
         for i, input, param in zip(inds, inputs, params):
-            assert self.platform == 'Qiskit', "Efficient gradient computation supports Qiskit only."
 
             # circuit_ = circuit.bind_parameters(self._compose_param_dict(input, param, input_dict_only=True))
 
@@ -257,7 +249,6 @@ class QuantumNeuralNetwork(Model):
     def _get_fisher(self, inds, inputs, params, results):
 
         for i, input, param in zip(inds, inputs, params):
-            assert self.platform == 'Qiskit', "Efficient QFI computation supports Qiskit only."
 
             input_dict = compose_param_dict(self.feature_map_circ.parameters, input)
             circuit_ = self.circuit.bind_parameters(input_dict)
@@ -384,7 +375,7 @@ if __name__ == '__main__':
     template = AnsatzTemplate()
     template.construct_simple_template(num_qubits=4, num_layers=1)
 
-    model = QuantumNeuralNetwork(feature_map, template, platform='Qiskit')
+    model = QuantumNeuralNetwork(None, template)
 
     model.visualize()
 
