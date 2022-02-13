@@ -80,7 +80,7 @@ class Test(unittest.TestCase):
 
         alpha = 1.
         beta = 1.
-        num_samples = 20
+        num_samples = 10
 
         count = 0
         for k in range(num_trials):
@@ -105,6 +105,6 @@ class Test(unittest.TestCase):
 
 test = Test()
 test.test_distance_as_a_metric()
-test.test_positive_definite_kernel(num_trials=5)
+test.test_positive_definite_kernel(num_trials=2)
 
 print("Unit test for OTMANN distance: Done!")
