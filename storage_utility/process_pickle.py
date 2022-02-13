@@ -26,7 +26,7 @@ if __name__ == '__main__':
     print(model.num_qubits, model.input_dim, model.param_dim)
 
     #############
-    filename = '../storage/test_save_pickle.pkl'
+    filename = '../retired/storage/test_save_pickle.pkl'
 
     save_qnn(model, filename)
 
