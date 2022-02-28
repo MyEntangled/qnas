@@ -118,114 +118,7 @@ def minimize_unitary(spectrum_A, spectrum_B):
 #     return transformed_spectrum_A, spectrum_B
 
 
-# def _get_shape_distance(V1, V2, num_samples, num_iters):
-#     '''
-#     Return the shape distance between two quantum gates
-#     :param V1:
-#     :param V2:
-#     :return:
-#     '''
-#
-#     assert V1 in ADMISSIBLE_GATES and V2 in ADMISSIBLE_GATES, "Input gates are not admissible."
-#     num_qubits_V1 = 1 if V1 in SINGLE_QUBIT_DETERMINISTIC_GATES + SINGLE_QUBIT_VARIATIONAL_GATES else 2
-#     num_qubits_V2 = 1 if V2 in SINGLE_QUBIT_DETERMINISTIC_GATES + SINGLE_QUBIT_VARIATIONAL_GATES else 2
-#     is_variational_V1 = 1 if V1 in SINGLE_QUBIT_VARIATIONAL_GATES + TWO_QUBIT_VARIATIONAL_GATES else 0
-#     is_variational_V2 = 1 if V2 in SINGLE_QUBIT_VARIATIONAL_GATES + TWO_QUBIT_VARIATIONAL_GATES else 0
-#
-#     if (num_qubits_V1 != num_qubits_V2) or (is_variational_V1 != is_variational_V2):
-#         return 10e9
-#     if is_variational_V1 == 0:
-#         return 0
-#
-#     anchor_states = clifford_group.get_anchor_states(num_qubits_V1, False)
-#     print(anchor_states)
-#     spectrum_V1 = state_utility.reformat_statedata(get_state_spectrum(num_qubits_V1, V1, range(num_qubits_V1), np.linspace(-eps, eps, num_samples), anchor_states))
-#     spectrum_V2 = state_utility.reformat_statedata(get_state_spectrum(num_qubits_V2, V2, range(num_qubits_V2), np.linspace(-eps, eps, num_samples), anchor_states))
-#
-#     data_A, data_B = spectrum_V1, spectrum_V2
-#     print(data_A.shape, data_B.shape)
-#
-#     min_distance = 10e9
-#
-#     for i in range(num_iters):
-#         #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[0]))
-#         #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[1]))
-#         data_A, data_B = minimize_permutation(data_A, data_B, axis=0)
-#
-#         #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[0]))
-#         #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[1]))
-#         data_A, data_B = minimize_permutation(data_A, data_B, axis=1)
-#
-#         #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[0]))
-#         #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[1]))
-#         data_A, data_B = minimize_unitary(data_A, data_B)
-#
-#         distance = np.linalg.norm(data_A - data_B) ** 2 / (data_A.shape[0] * data_A.shape[1])
-#         if distance < 10e-6:
-#             return 0
-#         if distance < min_distance:
-#             min_distance = distance
-#
-#         data_A = state_utility.reformat_statedata(data_A)
-#
-#
-#     return min(min_distance, np.linalg.norm(data_A - data_B) ** 2 / (data_A.shape[0] * data_A.shape[1]))
-
-# def compute_shape_distance(num_qubits, V1, V2, qargs1, qargs2, num_samples=100, num_iters=100):
-#     '''
-#     Return the shape distance between two quantum gates
-#     :param V1:
-#     :param V2:
-#     :return:
-#     '''
-#
-#     assert V1 in ADMISSIBLE_GATES and V2 in ADMISSIBLE_GATES, "Input gates are not admissible."
-#     #num_qubits_V1 = 1 if V1 in SINGLE_QUBIT_DETERMINISTIC_GATES + SINGLE_QUBIT_VARIATIONAL_GATES else 2
-#     #num_qubits_V2 = 1 if V2 in SINGLE_QUBIT_DETERMINISTIC_GATES + SINGLE_QUBIT_VARIATIONAL_GATES else 2
-#     is_variational_1 = 1 if V1 in SINGLE_QUBIT_VARIATIONAL_GATES + TWO_QUBIT_VARIATIONAL_GATES else 0
-#     is_variational_2 = 1 if V2 in SINGLE_QUBIT_VARIATIONAL_GATES + TWO_QUBIT_VARIATIONAL_GATES else 0
-#
-#     # if (num_qubits_V1 != num_qubits_V2) or (is_variational_V1 != is_variational_V2):
-#     #     return 10e9
-#     # if is_variational_V1 == 0:
-#     #     return 0
-#
-#     anchor_states = MUBs.get_anchor_states(num_qubits)
-#     #print(anchor_states)
-#
-#     spectrum_V1 = state_utility.reformat_statedata(get_state_spectrum(num_qubits, V1, qargs1, np.linspace(-eps, eps, num_samples), anchor_states))
-#     spectrum_V2 = state_utility.reformat_statedata(get_state_spectrum(num_qubits, V2, qargs2, np.linspace(-eps, eps, num_samples), anchor_states))
-#
-#     data_A, data_B = spectrum_V1, spectrum_V2
-#     print(data_A.shape, data_B.shape)
-#
-#     min_distance = 10e9
-#
-#     for i in range(num_iters):
-#         #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[0]))
-#         #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[1]))
-#         data_A, data_B = minimize_permutation(data_A, data_B, axis=0)
-#
-#         #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[0]))
-#         #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[1]))
-#         data_A, data_B = minimize_permutation(data_A, data_B, axis=1)
-#
-#         #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[0]))
-#         #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[1]))
-#         data_A, data_B = minimize_unitary(data_A, data_B)
-#
-#         distance = np.linalg.norm(data_A - data_B) ** 2 / (data_A.shape[0] * data_A.shape[1])
-#         if distance < 10e-6:
-#             return 0
-#         if distance < min_distance:
-#             min_distance = distance
-#
-#         data_A = state_utility.reformat_statedata(data_A)
-#
-#
-#     return min(min_distance, np.linalg.norm(data_A - data_B) ** 2 / (data_A.shape[0] * data_A.shape[1]))
-
-def _get_shape_distance(num_qubits, V1, V2, qargs1, qargs2, num_samples=100):
+def _get_shape_distance(V1, V2, num_samples, num_iters):
     '''
     Return the shape distance between two quantum gates
     :param V1:
@@ -234,233 +127,340 @@ def _get_shape_distance(num_qubits, V1, V2, qargs1, qargs2, num_samples=100):
     '''
 
     assert V1 in ADMISSIBLE_GATES and V2 in ADMISSIBLE_GATES, "Input gates are not admissible."
+    num_qubits_V1 = 1 if V1 in SINGLE_QUBIT_DETERMINISTIC_GATES + SINGLE_QUBIT_VARIATIONAL_GATES else 2
+    num_qubits_V2 = 1 if V2 in SINGLE_QUBIT_DETERMINISTIC_GATES + SINGLE_QUBIT_VARIATIONAL_GATES else 2
+    is_variational_V1 = 1 if V1 in SINGLE_QUBIT_VARIATIONAL_GATES + TWO_QUBIT_VARIATIONAL_GATES else 0
+    is_variational_V2 = 1 if V2 in SINGLE_QUBIT_VARIATIONAL_GATES + TWO_QUBIT_VARIATIONAL_GATES else 0
+
+    if (num_qubits_V1 != num_qubits_V2) or (is_variational_V1 != is_variational_V2):
+        return 10e9
+    if is_variational_V1 == 0:
+        return 0
+
+    anchor_states = clifford_group.get_anchor_states(num_qubits_V1, False)
+    print(anchor_states)
+    spectrum_V1 = state_utility.reformat_statedata(get_state_spectrum(num_qubits_V1, V1, range(num_qubits_V1), np.linspace(-eps, eps, num_samples), anchor_states))
+    spectrum_V2 = state_utility.reformat_statedata(get_state_spectrum(num_qubits_V2, V2, range(num_qubits_V2), np.linspace(-eps, eps, num_samples), anchor_states))
+
+    data_A, data_B = spectrum_V1, spectrum_V2
+    print(data_A.shape, data_B.shape)
+
+    min_distance = 10e9
+
+    for i in range(num_iters):
+        #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[0]))
+        #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[1]))
+        data_A, data_B = minimize_permutation(data_A, data_B, axis=0)
+
+        #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[0]))
+        #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[1]))
+        data_A, data_B = minimize_permutation(data_A, data_B, axis=1)
+
+        #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[0]))
+        #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[1]))
+        data_A, data_B = minimize_unitary(data_A, data_B)
+
+        distance = np.linalg.norm(data_A - data_B) ** 2 / (data_A.shape[0] * data_A.shape[1])
+        if distance < 10e-6:
+            return 0
+        if distance < min_distance:
+            min_distance = distance
+
+        data_A = state_utility.reformat_statedata(data_A)
+
+
+    return min(min_distance, np.linalg.norm(data_A - data_B) ** 2 / (data_A.shape[0] * data_A.shape[1]))
+
+def compute_shape_distance(num_qubits, V1, V2, qargs1, qargs2, num_samples=100, num_iters=100):
+    '''
+    Return the shape distance between two quantum gates
+    :param V1:
+    :param V2:
+    :return:
+    '''
+
+    assert V1 in ADMISSIBLE_GATES and V2 in ADMISSIBLE_GATES, "Input gates are not admissible."
+    #num_qubits_V1 = 1 if V1 in SINGLE_QUBIT_DETERMINISTIC_GATES + SINGLE_QUBIT_VARIATIONAL_GATES else 2
+    #num_qubits_V2 = 1 if V2 in SINGLE_QUBIT_DETERMINISTIC_GATES + SINGLE_QUBIT_VARIATIONAL_GATES else 2
+    is_variational_1 = 1 if V1 in SINGLE_QUBIT_VARIATIONAL_GATES + TWO_QUBIT_VARIATIONAL_GATES else 0
+    is_variational_2 = 1 if V2 in SINGLE_QUBIT_VARIATIONAL_GATES + TWO_QUBIT_VARIATIONAL_GATES else 0
+
+    # if (num_qubits_V1 != num_qubits_V2) or (is_variational_V1 != is_variational_V2):
+    #     return 10e9
+    # if is_variational_V1 == 0:
+    #     return 0
 
     anchor_states = MUBs.get_anchor_states(num_qubits)
+    #print(anchor_states)
 
-    #spectrum_V1 = state_utility.reformat_statedata(get_state_spectrum(num_qubits, V1, qargs1, np.linspace(-eps, eps, num_samples), anchor_states))
-    #spectrum_V2 = state_utility.reformat_statedata(get_state_spectrum(num_qubits, V2, qargs2, np.linspace(-eps, eps, num_samples), anchor_states))
-    spectrum_V1 = get_state_spectrum(num_qubits, V1, qargs1, np.linspace(-eps,eps,num_samples), anchor_states).reshape(-1, 2**num_qubits)
-    spectrum_V2 = get_state_spectrum(num_qubits, V2, qargs2, np.linspace(-eps,eps,num_samples), anchor_states).reshape(-1, 2**num_qubits)
+    spectrum_V1 = state_utility.reformat_statedata(get_state_spectrum(num_qubits, V1, qargs1, np.linspace(-eps, eps, num_samples), anchor_states))
+    spectrum_V2 = state_utility.reformat_statedata(get_state_spectrum(num_qubits, V2, qargs2, np.linspace(-eps, eps, num_samples), anchor_states))
 
-    print(spectrum_V1.shape, spectrum_V2.shape)
+    data_A, data_B = spectrum_V1, spectrum_V2
+    print(data_A.shape, data_B.shape)
 
-    return manifold_opt.match_state_clouds(spectrum_V1, spectrum_V2)
+    min_distance = 10e9
 
-def compute_shape_distance(V1,V2):
-    assert V1 in ADMISSIBLE_GATES and V2 in ADMISSIBLE_GATES, "Input gates are not admissible."
+    for i in range(num_iters):
+        #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[0]))
+        #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[1]))
+        data_A, data_B = minimize_permutation(data_A, data_B, axis=0)
 
-    num_qubits_1 = 1 if V1 in SINGLE_QUBIT_DETERMINISTIC_GATES + SINGLE_QUBIT_VARIATIONAL_GATES else 2
-    num_qubits_2 = 1 if V2 in SINGLE_QUBIT_DETERMINISTIC_GATES + SINGLE_QUBIT_VARIATIONAL_GATES else 2
-    # is_variational_1 = 1 if V1 in SINGLE_QUBIT_VARIATIONAL_GATES + TWO_QUBIT_VARIATIONAL_GATES else 0
-    # is_variational_2 = 1 if V2 in SINGLE_QUBIT_VARIATIONAL_GATES + TWO_QUBIT_VARIATIONAL_GATES else 0
-    # is_directed_1 = 1 if V1 in DIRECTED_GATES else 0
-    # is_directed_2 = 1 if V2 in DIRECTED_GATES else 0
+        #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[0]))
+        #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[1]))
+        data_A, data_B = minimize_permutation(data_A, data_B, axis=1)
 
-    ALL_DISTANCES = {}
+        #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[0]))
+        #print(np.linalg.norm(data_A - data_B) ** 2 / (1 * data_A.shape[1]))
+        data_A, data_B = minimize_unitary(data_A, data_B)
 
-    if num_qubits_1 == 1:
-        if num_qubits_2 == 1:
-            ## On the same register (same qubit)
-            # matrix1 = get_unitary_matrix(V=V1,num_qubits=1,qargs=[0])
-            # matrix2 = get_unitary_matrix(V=V2,num_qubits=1,qargs=[0])
-            # ALL_DISTANCES['_'.join([V1, V2, 's'])] = _get_core_distance(matrix1, matrix2)
-            ALL_DISTANCES['_'.join([V1, V2, 's'])] = _get_shape_distance(num_qubits=1,V1=V1,V2=V2,qargs1=[0],qargs2=[0])
+        distance = np.linalg.norm(data_A - data_B) ** 2 / (data_A.shape[0] * data_A.shape[1])
+        if distance < 10e-6:
+            return 0
+        if distance < min_distance:
+            min_distance = distance
 
-            ## On different registers (different registers)
-            # matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[0])
-            # matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[1])
-            # ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_core_distance(matrix1, matrix2)
-            #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_shape_distance(num_qubits=2,V1=V1,V2=V2,qargs1=[0],qargs2=[1])
-            ALL_DISTANCES['_'.join([V1, V2, 'd'])] = MAX_DISTANCE
+        data_A = state_utility.reformat_statedata(data_A)
 
-        else:  ## num_qubits_2 == 2
-            if V2 in DIRECTED_GATES:
-                ## V1 on the first qubit of the register V2 applied on
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[0])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[0,1])
-                #ALL_DISTANCES['_'.join([V1, V2, 'up'])] = _get_core_distance(matrix1, matrix2)
-                ALL_DISTANCES['_'.join([V1, V2, 'up'])] = _get_shape_distance(num_qubits=2, V1=V1, V2=V2, qargs1=[0], qargs2=[0,1])
 
-                ## V1 on the second qubit of the register V2 applied on
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[1])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[0,1])
-                #ALL_DISTANCES['_'.join([V1, V2, 'lo'])] = _get_core_distance(matrix1, matrix2)
-                ALL_DISTANCES['_'.join([V1, V2, 'lo'])] = _get_shape_distance(num_qubits=2, V1=V1, V2=V2, qargs1=[1], qargs2=[0,1])
+    return min(min_distance, np.linalg.norm(data_A - data_B) ** 2 / (data_A.shape[0] * data_A.shape[1]))
 
-                ## On different registers
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[0])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[1,2])
-                #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_core_distance(matrix1, matrix2)
-                #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[0], qargs2=[1,2])
-                ALL_DISTANCES['_'.join([V1, V2, 'd'])] = MAX_DISTANCE
-
-            else: ## V2 is NON-DIRECTED
-                ## Overlap on one qubit
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[0])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[0,1])
-                #ALL_DISTANCES['_'.join([V1, V2, 'over'])] = _get_core_distance(matrix1, matrix2)
-                ALL_DISTANCES['_'.join([V1, V2, 'over'])] = _get_shape_distance(num_qubits=2, V1=V1, V2=V2, qargs1=[0], qargs2=[0,1])
-
-                ## On different registers
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[0])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[1,2])
-                #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_core_distance(matrix1, matrix2)
-                #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[0], qargs2=[1,2])
-                ALL_DISTANCES['_'.join([V1, V2, 'd'])] = MAX_DISTANCE
-
-    else: ## num_qubits_1 == 2
-        if num_qubits_2 == 1:
-            if V1 in DIRECTED_GATES:
-                ## V2 on the first qubit of the register V1 applied on
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[0,1])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[0])
-                #ALL_DISTANCES['_'.join([V1, V2, 'up'])] = _get_core_distance(matrix1, matrix2)
-                ALL_DISTANCES['_'.join([V1, V2, 'up'])] = _get_shape_distance(num_qubits=2, V1=V1, V2=V2, qargs1=[0,1], qargs2=[0])
-
-                ## V2 on the second qubit of the register V1 applied on
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[0,1])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[1])
-                #ALL_DISTANCES['_'.join([V1, V2, 'lo'])] = _get_core_distance(matrix1, matrix2)
-                ALL_DISTANCES['_'.join([V1, V2, 'lo'])] = _get_shape_distance(num_qubits=2, V1=V1, V2=V2, qargs1=[0,1], qargs2=[1])
-
-                ## On different registers
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[0,1])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[2])
-                #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_core_distance(matrix1, matrix2)
-                ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[0,1], qargs2=[2])
-
-            else: ## V1 is NON-DIRECTED
-                ## Overlap on one qubit
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[0,1])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[0])
-                #ALL_DISTANCES['_'.join([V1, V2, 'over'])] = _get_core_distance(matrix1, matrix2)
-                ALL_DISTANCES['_'.join([V1, V2, 'over'])] = _get_shape_distance(num_qubits=2, V1=V1, V2=V2, qargs1=[0,1], qargs2=[0])
-
-                ## On different registers
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[0,1])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[2])
-                #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_core_distance(matrix1, matrix2)
-                #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[0,1], qargs2=[2])
-                ALL_DISTANCES['_'.join([V1, V2, 'd'])] = MAX_DISTANCE
-
-        else: ## num_qubits_2 == 2:
-            if (V1 in DIRECTED_GATES) and (V2 in DIRECTED_GATES):
-                ## Same register, aligning
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[0,1])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[0,1])
-                #ALL_DISTANCES['_'.join([V1, V2, 'alig'])] = _get_core_distance(matrix1, matrix2)
-                ALL_DISTANCES['_'.join([V1, V2, 'alig'])] = _get_shape_distance(num_qubits=2, V1=V1, V2=V2, qargs1=[0,1], qargs2=[0,1])
-
-                ## Same register, anti-align
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[0,1])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[1,0])
-                #ALL_DISTANCES['_'.join([V1, V2, 'anti'])] = _get_core_distance(matrix1, matrix2)
-                ALL_DISTANCES['_'.join([V1, V2, 'anti'])] = _get_shape_distance(num_qubits=2, V1=V1, V2=V2, qargs1=[0,1], qargs2=[1,0])
-
-                ## Overlap on the first qubit of V1 register, aligning
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[1,2])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[0,1])
-                #ALL_DISTANCES['_'.join([V1, V2, 'up', 'alig'])] = _get_core_distance(matrix1, matrix2)
-                ALL_DISTANCES['_'.join([V1, V2, 'up', 'alig'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[1,2], qargs2=[0,1])
-
-                ## Overlap on the first qubit of V1 register, anti-align
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[1,2])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[1,0])
-                #ALL_DISTANCES['_'.join([V1, V2, 'up', 'anti'])] = _get_core_distance(matrix1, matrix2)
-                ALL_DISTANCES['_'.join([V1, V2, 'up', 'anti'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[1,2], qargs2=[1,0])
-
-                ## Overlap on the second qubit of V1 register, aligning
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[0,1])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[1,2])
-                #ALL_DISTANCES['_'.join([V1, V2, 'lo', 'alig'])] = _get_core_distance(matrix1, matrix2)
-                ALL_DISTANCES['_'.join([V1, V2, 'lo', 'alig'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[0,1], qargs2=[1,2])
-
-                ## Overlap on the second qubit of V1 register, anti-align
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[0,1])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[2,1])
-                #ALL_DISTANCES['_'.join([V1, V2, 'lo', 'anti'])] = _get_core_distance(matrix1, matrix2)
-                ALL_DISTANCES['_'.join([V1, V2, 'lo', 'anti'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[0,1], qargs2=[2,1])
-
-                ## Different register
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=4,qargs=[0,1])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=4,qargs=[2,3])
-                #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_core_distance(matrix1, matrix2)
-                #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_shape_distance(num_qubits=4, V1=V1, V2=V2, qargs1=[0,1], qargs2=[2,3])
-                ALL_DISTANCES['_'.join([V1, V2, 'd'])] = MAX_DISTANCE
-
-            elif (V1 in DIRECTED_GATES) and (V2 not in DIRECTED_GATES):
-                ## Same register
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[0,1])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[0,1])
-                #ALL_DISTANCES['_'.join([V1, V2, 's'])] = _get_core_distance(matrix1, matrix2)
-                ALL_DISTANCES['_'.join([V1, V2, 's'])] = _get_shape_distance(num_qubits=2, V1=V1, V2=V2, qargs1=[0,1], qargs2=[0,1])
-
-                ## Overlap on the first qubit of V1 register
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[1,2])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[0,1])
-                #ALL_DISTANCES['_'.join([V1, V2, 'up'])] = _get_core_distance(matrix1, matrix2)
-                ALL_DISTANCES['_'.join([V1, V2, 'up'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[1,2], qargs2=[0,1])
-
-                ## Overlap on the second qubit of V1 register
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[0,1])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[1,2])
-                #ALL_DISTANCES['_'.join([V1, V2, 'lo'])] = _get_core_distance(matrix1, matrix2)
-                ALL_DISTANCES['_'.join([V1, V2, 'lo'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[0,1], qargs2=[1,2])
-
-                ## Different registers
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=4,qargs=[0,1])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=4,qargs=[2,3])
-                #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_core_distance(matrix1, matrix2)
-                #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_shape_distance(num_qubits=4, V1=V1, V2=V2, qargs1=[0,1], qargs2=[2,3])
-                ALL_DISTANCES['_'.join([V1, V2, 'd'])] = MAX_DISTANCE
-
-            elif (V1 not in DIRECTED_GATES) and (V2 in DIRECTED_GATES):
-                ## Same register
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[0,1])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[0,1])
-                #ALL_DISTANCES['_'.join([V1, V2, 's'])] = _get_core_distance(matrix1, matrix2)
-                ALL_DISTANCES['_'.join([V1, V2, 's'])] = _get_shape_distance(num_qubits=2, V1=V1, V2=V2, qargs1=[0,1], qargs2=[0,1])
-
-                # Overlap on the first qubit of V2 register
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[0,1])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[1,2])
-                #ALL_DISTANCES['_'.join([V1, V2, 'up'])] = _get_core_distance(matrix1, matrix2)
-                ALL_DISTANCES['_'.join([V1, V2, 'up'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[0,1], qargs2=[1,2])
-
-                # Overlap on the second qubit of V2 register
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[1,2])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[0,1])
-                #ALL_DISTANCES['_'.join([V1, V2, 'lo'])] = _get_core_distance(matrix1, matrix2)
-                ALL_DISTANCES['_'.join([V1, V2, 'lo'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[1,2], qargs2=[0,1])
-
-                # Different registers
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=4,qargs=[0,1])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=4,qargs=[2,3])
-                #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_core_distance(matrix1, matrix2)
-                #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_shape_distance(num_qubits=4, V1=V1, V2=V2, qargs1=[0,1], qargs2=[2,3])
-                ALL_DISTANCES['_'.join([V1, V2, 'd'])] = MAX_DISTANCE
-
-            else: ## 2 UNDIRECTED GATES
-                ## Same register
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[0,1])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[0,1])
-                #ALL_DISTANCES['_'.join([V1, V2, 's'])] = _get_core_distance(matrix1, matrix2)
-                ALL_DISTANCES['_'.join([V1, V2, 's'])] = _get_shape_distance(num_qubits=2, V1=V1, V2=V2, qargs1=[0,1], qargs2=[0,1])
-
-                ## Overlap on 1 qubit
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[0,1])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[1,2])
-                #ALL_DISTANCES['_'.join([V1, V2, 'over'])] = _get_core_distance(matrix1, matrix2)
-                ALL_DISTANCES['_'.join([V1, V2, 'over'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[0,1], qargs2=[1,2])
-
-                # Different registers
-                #matrix1 = get_unitary_matrix(V=V1,num_qubits=4,qargs=[0,1])
-                #matrix2 = get_unitary_matrix(V=V2,num_qubits=4,qargs=[2,3])
-                #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_core_distance(matrix1, matrix2)
-                #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_shape_distance(num_qubits=4, V1=V1, V2=V2, qargs1=[0,1], qargs2=[2,3])
-                ALL_DISTANCES['_'.join([V1, V2, 'd'])] = MAX_DISTANCE
-
-    return ALL_DISTANCES
+# def _get_shape_distance(num_qubits, V1, V2, qargs1, qargs2, num_samples=100):
+#     '''
+#     Return the shape distance between two quantum gates
+#     :param V1:
+#     :param V2:
+#     :return:
+#     '''
+#
+#     assert V1 in ADMISSIBLE_GATES and V2 in ADMISSIBLE_GATES, "Input gates are not admissible."
+#
+#     anchor_states = MUBs.get_anchor_states(num_qubits)
+#
+#     #spectrum_V1 = state_utility.reformat_statedata(get_state_spectrum(num_qubits, V1, qargs1, np.linspace(-eps, eps, num_samples), anchor_states))
+#     #spectrum_V2 = state_utility.reformat_statedata(get_state_spectrum(num_qubits, V2, qargs2, np.linspace(-eps, eps, num_samples), anchor_states))
+#     spectrum_V1 = get_state_spectrum(num_qubits, V1, qargs1, np.linspace(-eps,eps,num_samples), anchor_states).reshape(-1, 2**num_qubits)
+#     spectrum_V2 = get_state_spectrum(num_qubits, V2, qargs2, np.linspace(-eps,eps,num_samples), anchor_states).reshape(-1, 2**num_qubits)
+#
+#     print(spectrum_V1.shape, spectrum_V2.shape)
+#
+#     return manifold_opt.match_state_clouds(spectrum_V1, spectrum_V2)
+#
+# def compute_shape_distance(V1,V2):
+#     assert V1 in ADMISSIBLE_GATES and V2 in ADMISSIBLE_GATES, "Input gates are not admissible."
+#
+#     num_qubits_1 = 1 if V1 in SINGLE_QUBIT_DETERMINISTIC_GATES + SINGLE_QUBIT_VARIATIONAL_GATES else 2
+#     num_qubits_2 = 1 if V2 in SINGLE_QUBIT_DETERMINISTIC_GATES + SINGLE_QUBIT_VARIATIONAL_GATES else 2
+#     # is_variational_1 = 1 if V1 in SINGLE_QUBIT_VARIATIONAL_GATES + TWO_QUBIT_VARIATIONAL_GATES else 0
+#     # is_variational_2 = 1 if V2 in SINGLE_QUBIT_VARIATIONAL_GATES + TWO_QUBIT_VARIATIONAL_GATES else 0
+#     # is_directed_1 = 1 if V1 in DIRECTED_GATES else 0
+#     # is_directed_2 = 1 if V2 in DIRECTED_GATES else 0
+#
+#     ALL_DISTANCES = {}
+#
+#     if num_qubits_1 == 1:
+#         if num_qubits_2 == 1:
+#             ## On the same register (same qubit)
+#             # matrix1 = get_unitary_matrix(V=V1,num_qubits=1,qargs=[0])
+#             # matrix2 = get_unitary_matrix(V=V2,num_qubits=1,qargs=[0])
+#             # ALL_DISTANCES['_'.join([V1, V2, 's'])] = _get_core_distance(matrix1, matrix2)
+#             ALL_DISTANCES['_'.join([V1, V2, 's'])] = _get_shape_distance(num_qubits=1,V1=V1,V2=V2,qargs1=[0],qargs2=[0])
+#
+#             ## On different registers (different registers)
+#             # matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[0])
+#             # matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[1])
+#             # ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_core_distance(matrix1, matrix2)
+#             #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_shape_distance(num_qubits=2,V1=V1,V2=V2,qargs1=[0],qargs2=[1])
+#             ALL_DISTANCES['_'.join([V1, V2, 'd'])] = MAX_DISTANCE
+#
+#         else:  ## num_qubits_2 == 2
+#             if V2 in DIRECTED_GATES:
+#                 ## V1 on the first qubit of the register V2 applied on
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[0])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[0,1])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'up'])] = _get_core_distance(matrix1, matrix2)
+#                 ALL_DISTANCES['_'.join([V1, V2, 'up'])] = _get_shape_distance(num_qubits=2, V1=V1, V2=V2, qargs1=[0], qargs2=[0,1])
+#
+#                 ## V1 on the second qubit of the register V2 applied on
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[1])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[0,1])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'lo'])] = _get_core_distance(matrix1, matrix2)
+#                 ALL_DISTANCES['_'.join([V1, V2, 'lo'])] = _get_shape_distance(num_qubits=2, V1=V1, V2=V2, qargs1=[1], qargs2=[0,1])
+#
+#                 ## On different registers
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[0])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[1,2])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_core_distance(matrix1, matrix2)
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[0], qargs2=[1,2])
+#                 ALL_DISTANCES['_'.join([V1, V2, 'd'])] = MAX_DISTANCE
+#
+#             else: ## V2 is NON-DIRECTED
+#                 ## Overlap on one qubit
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[0])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[0,1])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'over'])] = _get_core_distance(matrix1, matrix2)
+#                 ALL_DISTANCES['_'.join([V1, V2, 'over'])] = _get_shape_distance(num_qubits=2, V1=V1, V2=V2, qargs1=[0], qargs2=[0,1])
+#
+#                 ## On different registers
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[0])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[1,2])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_core_distance(matrix1, matrix2)
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[0], qargs2=[1,2])
+#                 ALL_DISTANCES['_'.join([V1, V2, 'd'])] = MAX_DISTANCE
+#
+#     else: ## num_qubits_1 == 2
+#         if num_qubits_2 == 1:
+#             if V1 in DIRECTED_GATES:
+#                 ## V2 on the first qubit of the register V1 applied on
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[0,1])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[0])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'up'])] = _get_core_distance(matrix1, matrix2)
+#                 ALL_DISTANCES['_'.join([V1, V2, 'up'])] = _get_shape_distance(num_qubits=2, V1=V1, V2=V2, qargs1=[0,1], qargs2=[0])
+#
+#                 ## V2 on the second qubit of the register V1 applied on
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[0,1])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[1])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'lo'])] = _get_core_distance(matrix1, matrix2)
+#                 ALL_DISTANCES['_'.join([V1, V2, 'lo'])] = _get_shape_distance(num_qubits=2, V1=V1, V2=V2, qargs1=[0,1], qargs2=[1])
+#
+#                 ## On different registers
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[0,1])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[2])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_core_distance(matrix1, matrix2)
+#                 ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[0,1], qargs2=[2])
+#
+#             else: ## V1 is NON-DIRECTED
+#                 ## Overlap on one qubit
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[0,1])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[0])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'over'])] = _get_core_distance(matrix1, matrix2)
+#                 ALL_DISTANCES['_'.join([V1, V2, 'over'])] = _get_shape_distance(num_qubits=2, V1=V1, V2=V2, qargs1=[0,1], qargs2=[0])
+#
+#                 ## On different registers
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[0,1])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[2])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_core_distance(matrix1, matrix2)
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[0,1], qargs2=[2])
+#                 ALL_DISTANCES['_'.join([V1, V2, 'd'])] = MAX_DISTANCE
+#
+#         else: ## num_qubits_2 == 2:
+#             if (V1 in DIRECTED_GATES) and (V2 in DIRECTED_GATES):
+#                 ## Same register, aligning
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[0,1])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[0,1])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'alig'])] = _get_core_distance(matrix1, matrix2)
+#                 ALL_DISTANCES['_'.join([V1, V2, 'alig'])] = _get_shape_distance(num_qubits=2, V1=V1, V2=V2, qargs1=[0,1], qargs2=[0,1])
+#
+#                 ## Same register, anti-align
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[0,1])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[1,0])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'anti'])] = _get_core_distance(matrix1, matrix2)
+#                 ALL_DISTANCES['_'.join([V1, V2, 'anti'])] = _get_shape_distance(num_qubits=2, V1=V1, V2=V2, qargs1=[0,1], qargs2=[1,0])
+#
+#                 ## Overlap on the first qubit of V1 register, aligning
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[1,2])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[0,1])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'up', 'alig'])] = _get_core_distance(matrix1, matrix2)
+#                 ALL_DISTANCES['_'.join([V1, V2, 'up', 'alig'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[1,2], qargs2=[0,1])
+#
+#                 ## Overlap on the first qubit of V1 register, anti-align
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[1,2])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[1,0])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'up', 'anti'])] = _get_core_distance(matrix1, matrix2)
+#                 ALL_DISTANCES['_'.join([V1, V2, 'up', 'anti'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[1,2], qargs2=[1,0])
+#
+#                 ## Overlap on the second qubit of V1 register, aligning
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[0,1])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[1,2])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'lo', 'alig'])] = _get_core_distance(matrix1, matrix2)
+#                 ALL_DISTANCES['_'.join([V1, V2, 'lo', 'alig'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[0,1], qargs2=[1,2])
+#
+#                 ## Overlap on the second qubit of V1 register, anti-align
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[0,1])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[2,1])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'lo', 'anti'])] = _get_core_distance(matrix1, matrix2)
+#                 ALL_DISTANCES['_'.join([V1, V2, 'lo', 'anti'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[0,1], qargs2=[2,1])
+#
+#                 ## Different register
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=4,qargs=[0,1])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=4,qargs=[2,3])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_core_distance(matrix1, matrix2)
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_shape_distance(num_qubits=4, V1=V1, V2=V2, qargs1=[0,1], qargs2=[2,3])
+#                 ALL_DISTANCES['_'.join([V1, V2, 'd'])] = MAX_DISTANCE
+#
+#             elif (V1 in DIRECTED_GATES) and (V2 not in DIRECTED_GATES):
+#                 ## Same register
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[0,1])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[0,1])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 's'])] = _get_core_distance(matrix1, matrix2)
+#                 ALL_DISTANCES['_'.join([V1, V2, 's'])] = _get_shape_distance(num_qubits=2, V1=V1, V2=V2, qargs1=[0,1], qargs2=[0,1])
+#
+#                 ## Overlap on the first qubit of V1 register
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[1,2])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[0,1])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'up'])] = _get_core_distance(matrix1, matrix2)
+#                 ALL_DISTANCES['_'.join([V1, V2, 'up'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[1,2], qargs2=[0,1])
+#
+#                 ## Overlap on the second qubit of V1 register
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[0,1])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[1,2])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'lo'])] = _get_core_distance(matrix1, matrix2)
+#                 ALL_DISTANCES['_'.join([V1, V2, 'lo'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[0,1], qargs2=[1,2])
+#
+#                 ## Different registers
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=4,qargs=[0,1])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=4,qargs=[2,3])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_core_distance(matrix1, matrix2)
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_shape_distance(num_qubits=4, V1=V1, V2=V2, qargs1=[0,1], qargs2=[2,3])
+#                 ALL_DISTANCES['_'.join([V1, V2, 'd'])] = MAX_DISTANCE
+#
+#             elif (V1 not in DIRECTED_GATES) and (V2 in DIRECTED_GATES):
+#                 ## Same register
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[0,1])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[0,1])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 's'])] = _get_core_distance(matrix1, matrix2)
+#                 ALL_DISTANCES['_'.join([V1, V2, 's'])] = _get_shape_distance(num_qubits=2, V1=V1, V2=V2, qargs1=[0,1], qargs2=[0,1])
+#
+#                 # Overlap on the first qubit of V2 register
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[0,1])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[1,2])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'up'])] = _get_core_distance(matrix1, matrix2)
+#                 ALL_DISTANCES['_'.join([V1, V2, 'up'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[0,1], qargs2=[1,2])
+#
+#                 # Overlap on the second qubit of V2 register
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[1,2])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[0,1])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'lo'])] = _get_core_distance(matrix1, matrix2)
+#                 ALL_DISTANCES['_'.join([V1, V2, 'lo'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[1,2], qargs2=[0,1])
+#
+#                 # Different registers
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=4,qargs=[0,1])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=4,qargs=[2,3])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_core_distance(matrix1, matrix2)
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_shape_distance(num_qubits=4, V1=V1, V2=V2, qargs1=[0,1], qargs2=[2,3])
+#                 ALL_DISTANCES['_'.join([V1, V2, 'd'])] = MAX_DISTANCE
+#
+#             else: ## 2 UNDIRECTED GATES
+#                 ## Same register
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=2,qargs=[0,1])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=2,qargs=[0,1])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 's'])] = _get_core_distance(matrix1, matrix2)
+#                 ALL_DISTANCES['_'.join([V1, V2, 's'])] = _get_shape_distance(num_qubits=2, V1=V1, V2=V2, qargs1=[0,1], qargs2=[0,1])
+#
+#                 ## Overlap on 1 qubit
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=3,qargs=[0,1])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=3,qargs=[1,2])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'over'])] = _get_core_distance(matrix1, matrix2)
+#                 ALL_DISTANCES['_'.join([V1, V2, 'over'])] = _get_shape_distance(num_qubits=3, V1=V1, V2=V2, qargs1=[0,1], qargs2=[1,2])
+#
+#                 # Different registers
+#                 #matrix1 = get_unitary_matrix(V=V1,num_qubits=4,qargs=[0,1])
+#                 #matrix2 = get_unitary_matrix(V=V2,num_qubits=4,qargs=[2,3])
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_core_distance(matrix1, matrix2)
+#                 #ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_shape_distance(num_qubits=4, V1=V1, V2=V2, qargs1=[0,1], qargs2=[2,3])
+#                 ALL_DISTANCES['_'.join([V1, V2, 'd'])] = MAX_DISTANCE
+#
+#     return ALL_DISTANCES
 
 
 
@@ -503,5 +503,5 @@ if __name__ == '__main__':
     # print(gate_distance)
     # np.savetxt("gate_shape_distance.csv", gate_distance, delimiter=",")
 
-    print(compute_shape_distance('rxx', 'ryy'))
+    print(compute_shape_distance(1,'rx', 'ry',[0],[0]))
 
