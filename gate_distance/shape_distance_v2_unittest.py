@@ -2,7 +2,7 @@ import unittest
 import numpy as np
 from numpy.testing import *
 
-import new_shape_distance
+import shape_distance_v2
 from qiskit.quantum_info import random_statevector, random_unitary
 
 class Test(unittest.TestCase):
@@ -24,7 +24,7 @@ class Test(unittest.TestCase):
         new_anchor_order = np.random.permutation(num_anchors)
         spectrum_B = spectrum_B[new_anchor_order]
 
-        inds = new_shape_distance.maximize_fidelity_permutation(spectrum_A, spectrum_B, None, None)
+        inds = shape_distance_v2.maximize_fidelity_permutation(spectrum_A, spectrum_B, None, None)
 
         assert_equal(inds[new_anchor_order], np.array(range(num_anchors)))
 
