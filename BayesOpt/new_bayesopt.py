@@ -8,7 +8,15 @@ import gpytorch
 from botorch.models import SingleTaskGP
 from gpytorch.mlls.exact_marginal_log_likelihood import ExactMarginalLogLikelihood
 
-import cma
+from botorch.models.gpytorch import GPyTorchModel
+from gpytorch.models import ExactGP
+from gpytorch.means import ConstantMean
+from gpytorch.distributions import MultivariateNormal
+from gpytorch.likelihoods import GaussianLikelihood
+
+from botorch.optim import optimize_acqf
+
+#import cma
 from scipy.optimize import minimize
 
 from botorch import fit_gpytorch_model
@@ -22,6 +30,118 @@ warnings.filterwarnings('ignore', category=RuntimeWarning)
 
 from botorch.utils.transforms import standardize, normalize, unnormalize
 from botorch.utils.sampling import draw_sobol_samples
+
+
+class CustomSincGPKernel(gpytorch.kernels.Kernel):
+    # the sinc kernel is stationary
+    is_stationary = True
+
+    # We will register the parameter when initializing the kernel
+    def __init__(self, num_str_weights, priors=None, constraints=None, **kwargs):
+        super().__init__(**kwargs)
+
+        # register the raw parameter
+        self.register_parameter(
+            name='raw_alpha', parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, 1, 1))
+        )
+        self.register_parameter(
+            name='raw_alphanorm', parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, 1, 1))
+        )
+        for i in range(num_str_weights):
+            self.register_parameter(
+                name='raw_beta_'+str(i), parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, 1, 1))
+            )
+            self.register_parameter(
+                name='raw_betanorm_'+str(i), parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, 1, 1))
+            )
+
+        # set the parameter constraint to be positive, when nothing is specified
+        if constraints is None:
+            alpha_constraint = gpytorch.constraints.Positive()
+            alphanorm_constraint = gpytorch.constraints.Positive()
+            beta_constraints = [gpytorch.constraints.Positive()]*num_str_weights
+            betanorm_constraints = [gpytorch.constraints.Positive()]*num_str_weights
+        else:
+            alpha_constraint = constraints[0]
+            alphanorm_constraint = constraints[1]
+            beta_constraints, betanorm_constraints = zip(*constraints[2])
+
+
+        # register the constraints
+        self.register_constraint("raw_alpha", alpha_constraint)
+        self.register_constraint("raw_alphanorm", alphanorm_constraint)
+        for i in range(num_str_weights):
+            self.register_constraint("raw_beta_"+str(i), beta_constraints[i])
+            self.register_constraint("raw_betanorm_"+str(i), betanorm_constraints[i])
+
+
+        # set the parameter prior, see
+        # https://docs.gpytorch.ai/en/latest/module.html#gpytorch.Module.register_prior
+        if priors is None:
+            alpha_prior = None
+            alphanorm_prior = None
+            beta_priors = [None] * num_str_weights
+            betanorm_priors = [None] * num_str_weights
+        else:
+            alpha_prior = priors[0]
+            alphanorm_prior = priors[1]
+            beta_priors, betanorm_priors = zip(*priors[2])
+
+
+        if alpha_prior is not None:
+            self.register_prior("alpha_prior", alpha_prior, lambda m: m.alpha, lambda m,v: m._set_alpha)
+        if alphanorm_prior is not None:
+            self.register_prior("alphanorm_prior", alphanorm_prior, lambda m: m.alphanorm, lambda m,v: m._set_alphanorm)
+        for i in range(num_str_weights):
+            if beta_priors[i] is not None:
+                self.register_prior(name="beta_prior_"+str(i), prior=beta_priors[i], lambda m: m.beta[i], lambda m, v: m._set_beta(idx=i,val=v))
+            if betanorm_priors is not None:
+                self.register_prior(name="betanorm_prior_"+str(i), prior=betanorm_priors[i], lambda m: m.betanorm[i], lambda m, v: m._set_betanorm(idx=i,val=v))
+
+    # now set up the 'actual' paramter
+    @property
+    def alpha(self):
+        # when accessing the parameter, apply the constraint transform
+        return self.raw_alpha_constraint.transform(self.raw_alpha)
+    @property
+    def alphanorm(self):
+        # when accessing the parameter, apply the constraint transform
+        return self.raw_alphanorm_constraint.transform(self.raw_alphanorm)
+    @property
+    def beta(self,idx):
+        # when accessing the parameter, apply the constraint transform
+        return getattr(self, f"raw_beta_{idx}_constraint")
+    @property
+    def betanorm(self,idx):
+        # when accessing the parameter, apply the constraint transform
+        return getattr(self, f"raw_betanorm_{idx}_constraint")
+
+    def _set_alpha(self, value):
+        if not torch.is_tensor(value):
+            value = torch.as_tensor(value).to(self.raw_length_1)
+        # when setting the paramater, transform the actual value to a raw one by applying the inverse transform
+        self.initialize(raw_length_1=self.raw_length_constraint.inverse_transform(value))
+
+    def _set_length_2(self, value):
+        if not torch.is_tensor(value):
+            value = torch.as_tensor(value).to(self.raw_length_2)
+        # when setting the paramater, transform the actual value to a raw one by applying the inverse transform
+        self.initialize(raw_length_2=self.raw_length_constraint.inverse_transform(value))
+
+    # this is the kernel function
+    def forward(self, x1, x2, **params):
+        # calculate the distance between inputs
+        print(self.length_1, self.length_2)
+        x1 = x1.div(self.length_1)
+        x2 = x2.div(self.length_2)
+        diff = self.covar_dist(x1, x2, **params)
+        # prevent divide by 0 errors
+        diff.where(diff == 0, torch.as_tensor(1e-20).to(x1))
+        K = torch.sin(diff).div(diff)
+        print(x1.shape, x2.shape, K.shape, type(K))
+        print('kernel: ', K)
+
+        return gpytorch.lazify(K)
 
 class CircuitKernel(gpytorch.kernels.Kernel):
     is_stationary = False
@@ -40,12 +160,14 @@ class CircuitKernel(gpytorch.kernels.Kernel):
             is_batched = True
 
             dist = torch.zeros(size=(x1.shape[0], x1.shape[1], x2.shape[1])).to(x1)
+            dist_norm = torch.zeros_like(dist)
+
             for k in range(dist.shape[0]): # iterate through batchs
                 for i in range(dist.shape[1]):
                     for j in range(dist.shape[2]):
                         qc1 = self.decoder(vec=x1[k,i].detach().numpy())
                         qc2 = self.decoder(vec=x2[k,j].detach().numpy())
-                        dist[k,i,j] = self.circuit_distance(circ1=qc1, circ2=qc2)
+                        dist[k,i,j], dist_norm[k,i,j] = self.circuit_distance(circ1=qc1, circ2=qc2)
 
         elif len(x1.shape) == 2: ## (n_samples, n_features)
             is_batched = False
@@ -53,15 +175,17 @@ class CircuitKernel(gpytorch.kernels.Kernel):
             #x2 = x2.view(1,x2.shape[0],x2.shape[1])
 
             dist = torch.zeros(size=(x1.shape[0], x2.shape[0])).to(x1)
+            dist_norm = torch.zeros_like(dist)
+
             for i in range(dist.shape[0]):
                 for j in range(dist.shape[1]):
                     qc1 = self.decoder(vec=x1[i].detach().numpy())
                     qc2 = self.decoder(vec=x2[j].detach().numpy())
-                    dist[i,j] = self.circuit_distance(circ1=qc1, circ2=qc2)
+                    dist[i,j], dist_norm[i,j] = self.circuit_distance(circ1=qc1, circ2=qc2)
 
-        K = self.alpha * torch.exp(-self.beta * dist)
+        K = self.alpha * torch.exp(-self.beta * dist) + self.alpha * torch.exp(-self.beta * dist_norm)
         #K = gpytorch.lazy.lazify(K)
-        print(x1[0], x2[0])
+        #print(x1[0], x2[0])
         print(x1.shape, x2.shape, K.shape, type(K))
         print('kernel: ', K)
         return K
@@ -88,6 +212,22 @@ class FirstSincKernel(gpytorch.kernels.Kernel):
 
         return gpytorch.lazify(K)
 
+
+class CustomGPModel(ExactGP, GPyTorchModel):
+    _num_outputs = 1  # to inform GPyTorchModel API
+
+    def __init__(self, train_X, train_Y, covar_module):
+        # squeeze output dim before passing train_Y to ExactGP
+        super().__init__(train_X, train_Y.squeeze(-1), GaussianLikelihood())
+        self.mean_module = ConstantMean()
+        self.covar_module = covar_module
+        self.to(train_X)  # make sure we're on the right device/dtype
+
+    def forward(self, x):
+        mean_x = self.mean_module(x)
+        covar_x = self.covar_module(x)
+        return MultivariateNormal(mean_x, covar_x)
+
 class QNN_BO():
     def __init__(self, num_qubits, MAX_OP_NODES, N_TRIALS, N_BATCH, BATCH_SIZE, MC_SAMPLES, device=None, dtype=None):
         self.num_qubits = num_qubits
@@ -106,7 +246,7 @@ class QNN_BO():
     ## PROBLEM SETUP
     def obj_func(self, X):
         """Feasibility weighted objective"""
-        print(X)
+        #print(X)
         latent_func_values = []
         for enc in X.detach().numpy():
             qc = self.vec_to_circuit(vec=enc)
@@ -139,9 +279,9 @@ class QNN_BO():
     def initialize_model(self, train_x, train_obj, covar_module=None, input_transform=None, state_dict=None):
         # define models for objective
 
-        #covar_module = covar_module or gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+        covar_module = covar_module or gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
 
-        covar_module = covar_module or FirstSincKernel()
+        #covar_module = covar_module or FirstSincKernel()
 
         # if covar_module is None:
         #     covar_module = CircuitKernel(
@@ -155,7 +295,7 @@ class QNN_BO():
         #     )
 
         model = SingleTaskGP(train_x, train_obj, covar_module=covar_module, input_transform=input_transform).to(train_x)
-
+        print("NOISE LEVEL = ", model.likelihood.noise.item())
         mll = ExactMarginalLogLikelihood(model.likelihood, model)
         # load state dict if it is passed
         if state_dict is not None:
@@ -209,7 +349,6 @@ class QNN_BO():
             y = Y.view(-1).double().numpy()
             return y
 
-        print(bounds)
         candidates = torch.empty(size=(self.BATCH_SIZE, self.encoding_length), device=self.device, dtype=self.dtype)
 
         for i in range(self.BATCH_SIZE):
@@ -245,6 +384,7 @@ class QNN_BO():
 
         # observe new values
         new_x = unnormalize(candidates.detach(), bounds=bounds)
+        #print(new_x)
 
         #train_obj = [self.latent_func(self.vec_to_circuit(vec=vec)) for vec in new_x.numpy()]
         train_obj = self.obj_func(X=new_x)
@@ -286,15 +426,15 @@ class QNN_BO():
             for iteration in range(1, self.N_BATCH + 1):
                 print('iteration: ', iteration)
                 t0 = time.time()
-                print('fit the model')
+
                 # fit the models
                 #with gpytorch.settings.cholesky_jitter(10e-8):
                 #fit_gpytorch_model(mll_ei, fit_gpytorch_torch)
                 for name, param in model_ei.named_parameters():
                     print(name, param)
+
+                print('fit the model')
                 fit_gpytorch_model(mll_ei,max_retries=10)
-                for name, param in model_ei.named_parameters():
-                    print(name, param)
 
                 # define the qEI and qNEI acquisition modules using a QMC sampler
                 qmc_sampler = SobolQMCNormalSampler(num_samples=self.MC_SAMPLES)
@@ -379,13 +519,13 @@ if __name__ == '__main__':
 
     BATCH_SIZE = 3
     num_qubits = 2
-    MAX_OP_NODES = 8
+    MAX_OP_NODES = 12
 
     encoding_length = (num_qubits + 1) * MAX_OP_NODES
     bounds = torch.tensor([[0.] * encoding_length, [1.0] * encoding_length], device=device, dtype=dtype)
 
     N_TRIALS = 1
-    N_BATCH = 3
+    N_BATCH = 20
     MC_SAMPLES = 2048
 
     qnnbo = QNN_BO(

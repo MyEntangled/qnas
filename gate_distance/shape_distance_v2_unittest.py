@@ -3,12 +3,13 @@ import numpy as np
 from numpy.testing import *
 
 import shape_distance_v2
+import shape_distance_v3
 from qiskit.quantum_info import random_statevector, random_unitary
 
 class Test(unittest.TestCase):
 
     def test_minimize_permutation(self):
-        num_qubits = 2
+        num_qubits = 1
         d = 2**num_qubits
         num_anchors = d*(d+1)
         num_samples = 10
@@ -24,7 +25,9 @@ class Test(unittest.TestCase):
         new_anchor_order = np.random.permutation(num_anchors)
         spectrum_B = spectrum_B[new_anchor_order]
 
-        inds = shape_distance_v2.maximize_fidelity_permutation(spectrum_A, spectrum_B, None, None)
-
+        #inds = shape_distance_v2.maximize_fidelity_permutation(spectrum_A, spectrum_B, None, None)
+        inds = shape_distance_v3.optimize_permutation(spectrumA=spectrum_A, spectrumB=spectrum_B)
+        print(inds)
         assert_equal(inds[new_anchor_order], np.array(range(num_anchors)))
+
 

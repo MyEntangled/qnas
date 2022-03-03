@@ -1,5 +1,6 @@
 import MUBs
 import fubini_distance
+import time
 import gate_positioning
 
 import numpy as np
@@ -7,6 +8,7 @@ from qiskit import QuantumCircuit
 from qiskit.quantum_info import Statevector
 
 from scipy.optimize import linear_sum_assignment
+from scipy.linalg import orthogonal_procrustes
 
 import MUBs
 
@@ -28,11 +30,16 @@ def optimize_phases(X:np.ndarray, Y:np.ndarray):
     N, d = X.shape
 
     ### Modify code here
-    phases = np.zeros(N)
-
+    #U = np.inner(Y.conj(),X).diagonal()
+    U = np.sum(Y.conj() * X, axis=1)
+    print(np.abs(U))
+    phases = -np.angle(U)
+    #res = 2*N - 2*np.sum(np.abs(U))
+    res = np.linalg.norm(X * np.exp(1j*phases)[:,None] - Y)**2
+    assert np.isclose(res, 2*N - 2*np.sum(np.abs(U))), print(res, 2*N - 2*np.sum(np.abs(U)))
     ###
 
-    return phases
+    return phases, res
 
 def optimize_unitary(X:np.ndarray, Y:np.ndarray):
     """
@@ -47,10 +54,10 @@ def optimize_unitary(X:np.ndarray, Y:np.ndarray):
 
     ### Modify code here
     V = np.zeros((d,d))
-
+    V, res = orthogonal_procrustes(X,Y)
     ###
 
-    return V
+    return V, res**2
 
 def optimize_permutation(spectrumA:np.ndarray, spectrumB:np.ndarray):
     """
@@ -64,11 +71,26 @@ def optimize_permutation(spectrumA:np.ndarray, spectrumB:np.ndarray):
     m, T, d = spectrumA.shape
 
     ### Modify code here
-    B_perm = np.zeros()
 
-    ###
+    ### This construction uses norms over permutations, minimization
+    cost_matrix = np.zeros(shape=(spectrumA.shape[0], spectrumB.shape[0]))
+    for i in range(len(cost_matrix)):
+        for j in range(len(cost_matrix)):
+            cost_matrix[i, j] = np.linalg.norm(spectrumA[i] - spectrumB[j])**2
+    row_ind, B_perm = linear_sum_assignment(cost_matrix)
 
-    return B_perm
+    ### This uses sum of fidelity, maximization. The optimal permutation is the same as above
+    # cost_matrix = np.zeros(shape=(spectrumA.shape[0], spectrumB.shape[0]))
+    # for i in range(len(cost_matrix)):
+    #     for j in range(len(cost_matrix)):
+    #         cost_matrix[i, j] = sum(np.abs(np.sum(spectrumB[j].conj() * spectrumA[i], axis=1)))
+    # row_ind, B_perm = linear_sum_assignment(cost_matrix, maximize=True)
+
+    # Equivalent, but faster
+    # cost_matrix = np.sum(np.abs(np.matmul(spectrumB.conj().transpose(1,0,2), spectrumA.transpose(1,2,0)).transpose(1,2,0)), axis=2).T
+    # row_ind, B_perm = linear_sum_assignment(cost_matrix, maximize=True)
+
+    return B_perm, cost_matrix[row_ind, B_perm].sum()
 
 def get_state_spectrum(num_qubits, V, qargs, thetas, anchor_states):
     '''
@@ -141,27 +163,29 @@ def _shape_distance_with_config(num_qubits, V1, V2, qargs1, qargs2, num_samples=
 
     #val = np.linalg.norm(newX - newY)**2
     val_prev = val
-
+    print('init phase: ', val)
     while val_prev > tol:
         k += 1
-
+        print(k)
         neworder,val = optimize_permutation(spectrumA=newX.reshape(m, T, d), spectrumB=newY.reshape(m, T, d))
-        #newY = newY.reshape(m, T, d)[neworder].reshape(m * T, d)
+        print('perm: ', val)
 
         phasesX,val = optimize_phases(X=newX, Y=newY.reshape(m,T,d)[neworder].reshape(m*T,d))
         newX = newX * phasesX[:, None]
+        print('phase after perm: ', val)
 
         V,val = optimize_unitary(X=newX, Y=newY)
-
+        print('unitary: ', val)
         phasesX,val = optimize_phases(X=newX @ V, Y=newY)
         newX = newX * phasesX[:, None]
+        print('phase after unitary: ', val)
 
-        if val_prev - val < tol:
-            return val
+        if abs(val_prev - val) < tol:
+            opt_sum_fid = (2*spectrum_V1.shape[0]*spectrum_V1.shape[1] - val)/2.
+            print(val_prev, val)
+            return opt_sum_fid
         else:
             val_prep = val
-
-
 
 
 
@@ -174,3 +198,6 @@ def compute_shape_distance(V1: str, V2: str, num_qubits: int) -> dict:
                                                              qargs1=qargs[0], qargs2=qargs[1])
 
     return all_distances
+
+if __name__ == '__main__':
+    print(compute_shape_distance('ry', 'rx', num_qubits=1))
