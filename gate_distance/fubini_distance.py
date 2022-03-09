@@ -1,6 +1,5 @@
 import numpy as np
 import scipy
-#import jax.numpy as jnp
 
 def unitary_procrustes(X, Y):
     assert X.shape == Y.shape

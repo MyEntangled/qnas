@@ -31,14 +31,17 @@ warnings.filterwarnings('ignore', category=RuntimeWarning)
 from botorch.utils.transforms import standardize, normalize, unnormalize
 from botorch.utils.sampling import draw_sobol_samples
 
-
-class CustomSincGPKernel(gpytorch.kernels.Kernel):
-    # the sinc kernel is stationary
-    is_stationary = True
+class NewCircuitKernel(gpytorch.kernels.Kernel):
 
     # We will register the parameter when initializing the kernel
-    def __init__(self, num_str_weights, priors=None, constraints=None, **kwargs):
+    def __init__(self, decoder, num_qubits, MAX_OP_NODES, nu_list, device=None, dtype=None, priors=None, constraints=None, **kwargs):
         super().__init__(**kwargs)
+
+        self.decoder = decoder
+        self.num_qubits = num_qubits
+        self.MAX_OP_NODES = MAX_OP_NODES
+        self.nu_list = nu_list
+        self.num_str_weights = len(nu_list)
 
         # register the raw parameter
         self.register_parameter(
@@ -47,7 +50,7 @@ class CustomSincGPKernel(gpytorch.kernels.Kernel):
         self.register_parameter(
             name='raw_alphanorm', parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, 1, 1))
         )
-        for i in range(num_str_weights):
+        for i in range(self.num_str_weights):
             self.register_parameter(
                 name='raw_beta_'+str(i), parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, 1, 1))
             )
@@ -59,8 +62,8 @@ class CustomSincGPKernel(gpytorch.kernels.Kernel):
         if constraints is None:
             alpha_constraint = gpytorch.constraints.Positive()
             alphanorm_constraint = gpytorch.constraints.Positive()
-            beta_constraints = [gpytorch.constraints.Positive()]*num_str_weights
-            betanorm_constraints = [gpytorch.constraints.Positive()]*num_str_weights
+            beta_constraints = [gpytorch.constraints.Positive()] * self.num_str_weights
+            betanorm_constraints = [gpytorch.constraints.Positive()] * self.num_str_weights
         else:
             alpha_constraint = constraints[0]
             alphanorm_constraint = constraints[1]
@@ -70,7 +73,7 @@ class CustomSincGPKernel(gpytorch.kernels.Kernel):
         # register the constraints
         self.register_constraint("raw_alpha", alpha_constraint)
         self.register_constraint("raw_alphanorm", alphanorm_constraint)
-        for i in range(num_str_weights):
+        for i in range(self.num_str_weights):
             self.register_constraint("raw_beta_"+str(i), beta_constraints[i])
             self.register_constraint("raw_betanorm_"+str(i), betanorm_constraints[i])
 
@@ -80,8 +83,8 @@ class CustomSincGPKernel(gpytorch.kernels.Kernel):
         if priors is None:
             alpha_prior = None
             alphanorm_prior = None
-            beta_priors = [None] * num_str_weights
-            betanorm_priors = [None] * num_str_weights
+            beta_priors = [None] * self.num_str_weights
+            betanorm_priors = [None] * self.num_str_weights
         else:
             alpha_prior = priors[0]
             alphanorm_prior = priors[1]
@@ -92,11 +95,11 @@ class CustomSincGPKernel(gpytorch.kernels.Kernel):
             self.register_prior("alpha_prior", alpha_prior, lambda m: m.alpha, lambda m,v: m._set_alpha)
         if alphanorm_prior is not None:
             self.register_prior("alphanorm_prior", alphanorm_prior, lambda m: m.alphanorm, lambda m,v: m._set_alphanorm)
-        for i in range(num_str_weights):
+        for i in range(self.num_str_weights):
             if beta_priors[i] is not None:
-                self.register_prior(name="beta_prior_"+str(i), prior=beta_priors[i], lambda m: m.beta[i], lambda m, v: m._set_beta(idx=i,val=v))
+                self.register_prior("beta_prior_"+str(i), beta_priors[i], lambda m: m.beta[i], lambda m, v: m._set_beta(idx=i,val=v))
             if betanorm_priors is not None:
-                self.register_prior(name="betanorm_prior_"+str(i), prior=betanorm_priors[i], lambda m: m.betanorm[i], lambda m, v: m._set_betanorm(idx=i,val=v))
+                self.register_prior("betanorm_prior_"+str(i), betanorm_priors[i], lambda m: m.betanorm[i], lambda m, v: m._set_betanorm(idx=i,val=v))
 
     # now set up the 'actual' paramter
     @property
@@ -107,41 +110,220 @@ class CustomSincGPKernel(gpytorch.kernels.Kernel):
     def alphanorm(self):
         # when accessing the parameter, apply the constraint transform
         return self.raw_alphanorm_constraint.transform(self.raw_alphanorm)
-    @property
+
     def beta(self,idx):
         # when accessing the parameter, apply the constraint transform
-        return getattr(self, f"raw_beta_{idx}_constraint")
-    @property
+        return getattr(self, f"raw_beta_{idx}_constraint").transform(getattr(self, f"raw_betanorm_{idx}"))
+
     def betanorm(self,idx):
         # when accessing the parameter, apply the constraint transform
-        return getattr(self, f"raw_betanorm_{idx}_constraint")
+        return getattr(self, f"raw_betanorm_{idx}_constraint").transform(getattr(self, f"raw_betanorm_{idx}"))
 
     def _set_alpha(self, value):
         if not torch.is_tensor(value):
-            value = torch.as_tensor(value).to(self.raw_length_1)
+            value = torch.as_tensor(value).to(self.raw_alpha)
         # when setting the paramater, transform the actual value to a raw one by applying the inverse transform
-        self.initialize(raw_length_1=self.raw_length_constraint.inverse_transform(value))
+        self.initialize(raw_alpha=self.raw_alpha_constraint.inverse_transform(value))
 
-    def _set_length_2(self, value):
+    def _set_alphanorm(self, value):
         if not torch.is_tensor(value):
-            value = torch.as_tensor(value).to(self.raw_length_2)
+            value = torch.as_tensor(value).to(self.raw_alphanorm)
         # when setting the paramater, transform the actual value to a raw one by applying the inverse transform
-        self.initialize(raw_length_2=self.raw_length_constraint.inverse_transform(value))
+        self.initialize(raw_alphanorm=self.raw_alphanorm_constraint.inverse_transform(value))
+
+    def _set_beta(self, idx, value):
+        if not torch.is_tensor(value):
+            value = torch.as_tensor(value).to(getattr(self, f"raw_beta_{idx}"))
+        kwargs = {f'raw_beta_{idx}': getattr(self, "raw_beta_{idx}_constraint").inverse_transform(value)}
+        getattr(self, 'initialize')(**kwargs)
+
+    def _set_betanorm(self, idx, value):
+        if not torch.is_tensor(value):
+            value = torch.as_tensor(value).to(getattr(self, f"raw_betanorm_{idx}"))
+        kwargs = {f'raw_betanorm_{idx}': getattr(self, "raw_betanorm_{idx}_constraint").inverse_transform(value)}
+        getattr(self, 'initialize')(**kwargs)
 
     # this is the kernel function
     def forward(self, x1, x2, **params):
-        # calculate the distance between inputs
-        print(self.length_1, self.length_2)
-        x1 = x1.div(self.length_1)
-        x2 = x2.div(self.length_2)
-        diff = self.covar_dist(x1, x2, **params)
-        # prevent divide by 0 errors
-        diff.where(diff == 0, torch.as_tensor(1e-20).to(x1))
-        K = torch.sin(diff).div(diff)
-        print(x1.shape, x2.shape, K.shape, type(K))
-        print('kernel: ', K)
+        # # calculate the distance between inputs
+        # diff = self.covar_dist(x1, x2, **params)
+        # #getattr(self, f"beta_{idx}")
+        # print(self.alpha, self.alphanorm)
+        # print([(self.beta(idx=idx), self.betanorm(idx=idx)) for idx in range(self.num_str_weights)])
+        #
+        # exp_term = sum([ self.beta(idx=idx) * diff for idx in range(self.num_str_weights) ])
+        # expnorm_term = sum([ self.betanorm(idx=idx) * (diff**2) for idx in range(self.num_str_weights) ])
+        # K = self.alpha * torch.exp(-exp_term) + self.alphanorm * torch.exp(-expnorm_term)
+
+
+        if len(x1.shape) == 3: ## (n_batchs, n_samples, n_features)
+            is_batched = True
+
+            weighted_dist = torch.zeros(size=(x1.shape[0], x1.shape[1], x2.shape[1])).to(x1)
+            weighted_distnorm_square = torch.zeros_like(weighted_dist)
+
+            for k in range(weighted_dist.shape[0]): # iterate through batchs
+                for i in range(weighted_dist.shape[1]):
+                    for j in range(weighted_dist.shape[2]):
+                        qc1 = self.decoder(vec=x1[k,i].detach().numpy())
+                        qc2 = self.decoder(vec=x2[k,j].detach().numpy())
+                        all_dist, all_distnorm = self.circuit_distance(circ1=qc1, circ2=qc2, nu_list=self.nu_list)
+                        weighted_dist[k,i,j] =  sum([ self.beta(idx=idx) * dist for idx,dist in enumerate(all_dist) ])
+                        weighted_distnorm_square[k,i,j] = sum([ self.betanorm(idx=idx) * (distnorm**2) for idx,distnorm in enumerate(all_distnorm) ])
+
+        elif len(x1.shape) == 2: ## (n_samples, n_features)
+            is_batched = False
+
+            weighted_dist = torch.zeros(size=(x1.shape[0], x2.shape[0])).to(x1)
+            weighted_distnorm_square = torch.zeros_like(weighted_dist)
+
+            for i in range(weighted_dist.shape[0]):
+                for j in range(weighted_dist.shape[1]):
+                    qc1 = self.decoder(vec=x1[i].detach().numpy())
+                    qc2 = self.decoder(vec=x2[j].detach().numpy())
+                    #dist[i,j], dist_norm[i,j] = self.circuit_distance(circ1=qc1, circ2=qc2)
+                    all_dist, all_distnorm = self.circuit_distance(circ1=qc1, circ2=qc2, nu_list=self.nu_list)
+                    weighted_dist[i, j] = sum([ self.beta(idx=idx) * dist for idx, dist in enumerate(all_dist) ])
+                    weighted_distnorm_square[i, j] = sum([ self.betanorm(idx=idx) * (distnorm ** 2) for idx, distnorm in enumerate(all_distnorm) ])
+
+        print(torch.mean(weighted_dist), torch.mean(weighted_distnorm_square))
+        K = self.alpha * torch.exp(-weighted_dist) + self.alphanorm * torch.exp(-weighted_distnorm_square)
+
+        #print(x1.shape, x2.shape, K.shape, type(K))
+        #print('kernel: ', K)
 
         return gpytorch.lazify(K)
+
+    def circuit_distance(self, circ1, circ2, nas_cost=1, nu_list=[0.1]):
+        return optimal_transport.circuit_distance(PQC_1=circ1, PQC_2=circ2, nas_cost=nas_cost, nu_list=nu_list)
+
+# class CustomDistGPKernel(gpytorch.kernels.Kernel):
+#     # the sinc kernel is stationary
+#     is_stationary = True
+#
+#     # We will register the parameter when initializing the kernel
+#     def __init__(self, num_str_weights, priors=None, constraints=None, **kwargs):
+#         super().__init__(**kwargs)
+#
+#         self.num_str_weights = num_str_weights
+#
+#         # register the raw parameter
+#         self.register_parameter(
+#             name='raw_alpha', parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, 1, 1))
+#         )
+#         self.register_parameter(
+#             name='raw_alphanorm', parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, 1, 1))
+#         )
+#         for i in range(num_str_weights):
+#             self.register_parameter(
+#                 name='raw_beta_'+str(i), parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, 1, 1))
+#             )
+#             self.register_parameter(
+#                 name='raw_betanorm_'+str(i), parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, 1, 1))
+#             )
+#
+#         # set the parameter constraint to be positive, when nothing is specified
+#         if constraints is None:
+#             alpha_constraint = gpytorch.constraints.Positive()
+#             alphanorm_constraint = gpytorch.constraints.Positive()
+#             beta_constraints = [gpytorch.constraints.Positive()]*num_str_weights
+#             betanorm_constraints = [gpytorch.constraints.Positive()]*num_str_weights
+#         else:
+#             alpha_constraint = constraints[0]
+#             alphanorm_constraint = constraints[1]
+#             beta_constraints, betanorm_constraints = zip(*constraints[2])
+#
+#
+#         # register the constraints
+#         self.register_constraint("raw_alpha", alpha_constraint)
+#         self.register_constraint("raw_alphanorm", alphanorm_constraint)
+#         for i in range(num_str_weights):
+#             self.register_constraint("raw_beta_"+str(i), beta_constraints[i])
+#             self.register_constraint("raw_betanorm_"+str(i), betanorm_constraints[i])
+#
+#
+#         # set the parameter prior, see
+#         # https://docs.gpytorch.ai/en/latest/module.html#gpytorch.Module.register_prior
+#         if priors is None:
+#             alpha_prior = None
+#             alphanorm_prior = None
+#             beta_priors = [None] * num_str_weights
+#             betanorm_priors = [None] * num_str_weights
+#         else:
+#             alpha_prior = priors[0]
+#             alphanorm_prior = priors[1]
+#             beta_priors, betanorm_priors = zip(*priors[2])
+#
+#
+#         if alpha_prior is not None:
+#             self.register_prior("alpha_prior", alpha_prior, lambda m: m.alpha, lambda m,v: m._set_alpha)
+#         if alphanorm_prior is not None:
+#             self.register_prior("alphanorm_prior", alphanorm_prior, lambda m: m.alphanorm, lambda m,v: m._set_alphanorm)
+#         for i in range(num_str_weights):
+#             if beta_priors[i] is not None:
+#                 self.register_prior("beta_prior_"+str(i), beta_priors[i], lambda m: m.beta[i], lambda m, v: m._set_beta(idx=i,val=v))
+#             if betanorm_priors is not None:
+#                 self.register_prior("betanorm_prior_"+str(i), betanorm_priors[i], lambda m: m.betanorm[i], lambda m, v: m._set_betanorm(idx=i,val=v))
+#
+#     # now set up the 'actual' paramter
+#     @property
+#     def alpha(self):
+#         # when accessing the parameter, apply the constraint transform
+#         return self.raw_alpha_constraint.transform(self.raw_alpha)
+#     @property
+#     def alphanorm(self):
+#         # when accessing the parameter, apply the constraint transform
+#         return self.raw_alphanorm_constraint.transform(self.raw_alphanorm)
+#
+#     def beta(self,idx):
+#         # when accessing the parameter, apply the constraint transform
+#         #idx = 0
+#         return getattr(self, f"raw_beta_{idx}_constraint").transform(getattr(self, f"raw_betanorm_{idx}"))
+#
+#     def betanorm(self,idx):
+#         # when accessing the parameter, apply the constraint transform
+#         return getattr(self, f"raw_betanorm_{idx}_constraint").transform(getattr(self, f"raw_betanorm_{idx}"))
+#
+#     def _set_alpha(self, value):
+#         if not torch.is_tensor(value):
+#             value = torch.as_tensor(value).to(self.raw_alpha)
+#         # when setting the paramater, transform the actual value to a raw one by applying the inverse transform
+#         self.initialize(raw_alpha=self.raw_alpha_constraint.inverse_transform(value))
+#
+#     def _set_alphanorm(self, value):
+#         if not torch.is_tensor(value):
+#             value = torch.as_tensor(value).to(self.raw_alphanorm)
+#         # when setting the paramater, transform the actual value to a raw one by applying the inverse transform
+#         self.initialize(raw_alphanorm=self.raw_alphanorm_constraint.inverse_transform(value))
+#
+#     def _set_beta(self, idx, value):
+#         if not torch.is_tensor(value):
+#             value = torch.as_tensor(value).to(getattr(self, f"raw_beta_{idx}"))
+#         kwargs = {f'raw_beta_{idx}': getattr(self, "raw_beta_{idx}_constraint").inverse_transform(value)}
+#         getattr(self, 'initialize')(**kwargs)
+#
+#     def _set_betanorm(self, idx, value):
+#         if not torch.is_tensor(value):
+#             value = torch.as_tensor(value).to(getattr(self, f"raw_betanorm_{idx}"))
+#         kwargs = {f'raw_betanorm_{idx}': getattr(self, "raw_betanorm_{idx}_constraint").inverse_transform(value)}
+#         getattr(self, 'initialize')(**kwargs)
+#
+#     # this is the kernel function
+#     def forward(self, x1, x2, **params):
+#         # calculate the distance between inputs
+#         diff = self.covar_dist(x1, x2, **params)
+#         #getattr(self, f"beta_{idx}")
+#         print(self.alpha, self.alphanorm)
+#         print([(self.beta(idx=idx), self.betanorm(idx=idx)) for idx in range(self.num_str_weights)])
+#
+#         exp_term = sum([ self.beta(idx=idx) * diff for idx in range(self.num_str_weights) ])
+#         expnorm_term = sum([ self.betanorm(idx=idx) * (diff**2) for idx in range(self.num_str_weights) ])
+#         K = self.alpha * torch.exp(-exp_term) + self.alphanorm * torch.exp(-expnorm_term)
+#
+#         print(x1.shape, x2.shape, K.shape, type(K))
+#         print('kernel: ', K)
+#
+#         return gpytorch.lazify(K)
 
 class CircuitKernel(gpytorch.kernels.Kernel):
     is_stationary = False
@@ -279,9 +461,19 @@ class QNN_BO():
     def initialize_model(self, train_x, train_obj, covar_module=None, input_transform=None, state_dict=None):
         # define models for objective
 
-        covar_module = covar_module or gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+        #covar_module = covar_module or gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
 
         #covar_module = covar_module or FirstSincKernel()
+
+        #covar_module = covar_module or NewCircuitKernel(nu_list=[0.1, 0.2, 0.4, 0.8])
+        if covar_module is None:
+            covar_module = NewCircuitKernel(decoder=self.vec_to_circuit,
+                                            num_qubits=self.num_qubits,
+                                            MAX_OP_NODES=MAX_OP_NODES,
+                                            nu_list=[0.1, 0.2, 0.4, 0.8],
+                                            device=self.device,
+                                            dtype=self.dtype,
+                                            )
 
         # if covar_module is None:
         #     covar_module = CircuitKernel(
@@ -434,8 +626,8 @@ class QNN_BO():
                     print(name, param)
 
                 print('fit the model')
-                fit_gpytorch_model(mll_ei,max_retries=10)
-
+                #fit_gpytorch_model(mll_ei,nu_list=[0.1, 0.2, 0.4, 0.8])
+                fit_gpytorch_model(mll_ei, max_retries=10)
                 # define the qEI and qNEI acquisition modules using a QMC sampler
                 qmc_sampler = SobolQMCNormalSampler(num_samples=self.MC_SAMPLES)
 

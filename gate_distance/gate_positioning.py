@@ -1,5 +1,6 @@
 from typing import List
-from qiskit.dagcircuit.dagnode import DAGOpNode
+#from qiskit.dagcircuit.dagnode import DAGOpNode
+from qiskit.dagcircuit.dagnode import DAGNode
 
 import numpy as np
 from qiskit import QuantumCircuit
@@ -219,7 +220,7 @@ def get_pos_from_gate_name(V1:str, V2:str, qargs:List) -> dict:
             else:
                 return 'd'
 
-def get_pos_from_gate_DAGobj(node1:DAGOpNode, node2:DAGOpNode) -> dict:
+def get_pos_from_gate_DAGobj(node1:DAGNode, node2:DAGNode) -> dict:
     V1 = node1.name
     V2 = node2.name
     qarg1 = [qubit.index for qubit in node1.qargs]

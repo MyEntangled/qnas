@@ -5,10 +5,11 @@ import gate_positioning
 
 import numpy as np
 from qiskit import QuantumCircuit
-from qiskit.quantum_info import Statevector
+from qiskit.quantum_info import Statevector, random_unitary, Operator
 
 from scipy.optimize import linear_sum_assignment
 from scipy.linalg import orthogonal_procrustes
+import scipy
 
 import MUBs
 
@@ -32,7 +33,6 @@ def optimize_phases(X:np.ndarray, Y:np.ndarray):
     ### Modify code here
     #U = np.inner(Y.conj(),X).diagonal()
     U = np.sum(Y.conj() * X, axis=1)
-    print(np.abs(U))
     phases = -np.angle(U)
     #res = 2*N - 2*np.sum(np.abs(U))
     res = np.linalg.norm(X * np.exp(1j*phases)[:,None] - Y)**2
@@ -51,13 +51,17 @@ def optimize_unitary(X:np.ndarray, Y:np.ndarray):
     """
     assert X.shape == Y.shape and len(X.shape) == 2
     N, d = X.shape
-
+    #print("before procrustes: ", np.linalg.norm(X-Y)**2)
     ### Modify code here
-    V = np.zeros((d,d))
-    V, res = orthogonal_procrustes(X,Y)
-    ###
 
-    return V, res**2
+    #V = np.zeros((d,d))
+    M = (X.conj().T) @ Y
+    U, Sigma, V_dag = scipy.linalg.svd(M)
+    Omega = U @ V_dag
+    res = np.linalg.norm(X @ Omega - Y) ** 2
+    ###
+    #print("after procrustes: ", res)
+    return Omega, res
 
 def optimize_permutation(spectrumA:np.ndarray, spectrumB:np.ndarray):
     """
@@ -71,13 +75,17 @@ def optimize_permutation(spectrumA:np.ndarray, spectrumB:np.ndarray):
     m, T, d = spectrumA.shape
 
     ### Modify code here
+    #print('before permutation', np.linalg.norm(spectrumA - spectrumB)**2)
+
 
     ### This construction uses norms over permutations, minimization
-    cost_matrix = np.zeros(shape=(spectrumA.shape[0], spectrumB.shape[0]))
-    for i in range(len(cost_matrix)):
-        for j in range(len(cost_matrix)):
-            cost_matrix[i, j] = np.linalg.norm(spectrumA[i] - spectrumB[j])**2
-    row_ind, B_perm = linear_sum_assignment(cost_matrix)
+    # cost_matrix = np.zeros(shape=(spectrumA.shape[0], spectrumB.shape[0]))
+    # for i in range(len(cost_matrix)):
+    #     for j in range(len(cost_matrix)):
+    #         cost_matrix[i, j] = np.linalg.norm(spectrumA[i] - spectrumB[j])**2
+    # row_ind, B_perm = linear_sum_assignment(cost_matrix)
+    # print('after permutation', np.linalg.norm(spectrumA - spectrumB[B_perm]) ** 2)
+    #return B_perm, cost_matrix[row_ind, B_perm].sum()
 
     ### This uses sum of fidelity, maximization. The optimal permutation is the same as above
     # cost_matrix = np.zeros(shape=(spectrumA.shape[0], spectrumB.shape[0]))
@@ -86,11 +94,14 @@ def optimize_permutation(spectrumA:np.ndarray, spectrumB:np.ndarray):
     #         cost_matrix[i, j] = sum(np.abs(np.sum(spectrumB[j].conj() * spectrumA[i], axis=1)))
     # row_ind, B_perm = linear_sum_assignment(cost_matrix, maximize=True)
 
-    # Equivalent, but faster
-    # cost_matrix = np.sum(np.abs(np.matmul(spectrumB.conj().transpose(1,0,2), spectrumA.transpose(1,2,0)).transpose(1,2,0)), axis=2).T
-    # row_ind, B_perm = linear_sum_assignment(cost_matrix, maximize=True)
 
-    return B_perm, cost_matrix[row_ind, B_perm].sum()
+    # Equivalent, but faster
+    cost_matrix = np.sum(np.abs(np.matmul(spectrumB.conj().transpose(1,0,2), spectrumA.transpose(1,2,0)).transpose(1,2,0)), axis=2).T
+    row_ind, B_perm = linear_sum_assignment(cost_matrix, maximize=True)
+    #print('after permutation', np.linalg.norm(spectrumA - spectrumB[B_perm]) ** 2)
+
+
+    return B_perm, np.linalg.norm(spectrumA - spectrumB[B_perm]) ** 2
 
 def get_state_spectrum(num_qubits, V, qargs, thetas, anchor_states):
     '''
@@ -104,7 +115,7 @@ def get_state_spectrum(num_qubits, V, qargs, thetas, anchor_states):
     '''
     assert V in ADMISSIBLE_GATES, f"V({V}) must belong to ADMISSIBLE_GATES({ADMISSIBLE_GATES})"
 
-    output_states = np.zeros(shape=(len(anchor_states), len(thetas), 2 ** num_qubits), dtype=np.complex_)
+    output_states = np.zeros(shape=(len(anchor_states), len(thetas), 2 ** num_qubits), dtype=np.complex128)
 
     for i, anchor_state in enumerate(anchor_states):
 
@@ -127,7 +138,64 @@ def get_state_spectrum(num_qubits, V, qargs, thetas, anchor_states):
 
     return np.array(output_states)
 
-def _shape_distance_with_config(num_qubits, V1, V2, qargs1, qargs2, num_samples=4):
+def optimization_routine(spectrum_V1, spectrum_V2, tol=10e-6):
+    m, T, d = spectrum_V1.shape
+    k = 0
+
+    newX = spectrum_V1.copy().reshape(m * T, d)
+    newY = spectrum_V2.copy().reshape(m * T, d)
+    print('raw: ', np.linalg.norm(newX - newY) ** 2)
+    phasesX, val = optimize_phases(X=newX, Y=newY)
+    newX = newX * np.exp(1j * phasesX)[:, None]
+    print('init phase: ', val)
+
+    val_prev = val
+
+    tail_length = 0
+
+    while True:
+        k += 1
+        #print('iteration:', k)
+        neworder, val = optimize_permutation(spectrumA=newX.reshape(m, T, d), spectrumB=newY.reshape(m, T, d))
+        newY = newY.reshape(m, T, d)[neworder].reshape(m * T, d)
+
+        phasesX, val = optimize_phases(X=newX, Y=newY)
+        newX = newX * np.exp(1j * phasesX)[:, None]
+        #print('phase after perm: ', val)
+
+        V, val = optimize_unitary(X=newX, Y=newY)
+        newX = newX @ V
+        #print('unitary: ', val)
+
+        phasesX, val = optimize_phases(X=newX, Y=newY)
+        newX = newX * np.exp(1j * phasesX)[:, None]
+        #print('phase after unitary: ', val)
+
+        print(f'Iteration {k}: optimal value = {val}')
+        if abs(val-val_prev) < tol:
+            tail_length += 1
+            if tail_length == 5:
+                opt_sum_fid = (2 * spectrum_V1.shape[0] * spectrum_V1.shape[1] - val) / 2.
+                return opt_sum_fid
+        else:
+            val_prev = val
+
+def get_counter_unitary(spectrum_V1, spectrum_V2, V1, V2, qargs1, qargs2):
+    m, T, d = spectrum_V1.shape
+    num_qubits = int(np.log2(d))
+
+    qc = QuantumCircuit(num_qubits)
+    if V1 == 'rx' and V2 == 'ry':
+        print('counter unitary exists')
+        qc.rz(np.pi/2, qargs1)
+    if V1 == 'rx' and V2 == 'rz':
+        print('counter unitary exists')
+        qc.ry(np.pi/2, qargs1)
+
+    counter_unitary = Operator(qc).data
+    return counter_unitary
+
+def _shape_distance_with_config(num_qubits, V1, V2, qargs1, qargs2, num_samples=4, num_trials=200):
     '''
     Return the shape distance between two quantum gates
     :param V1:
@@ -150,42 +218,44 @@ def _shape_distance_with_config(num_qubits, V1, V2, qargs1, qargs2, num_samples=
                                      np.linspace(lo_bound, up_bound, num_samples, endpoint=False), anchor_states)
     print(spectrum_V1.shape, spectrum_V2.shape)
 
-
+    tol = 10e-4
     m, T, d = spectrum_V1.shape
-    tol = 10e-6
-    k = 0
 
-    newX = spectrum_V1.copy().reshape(m*T,d)
-    newY = spectrum_V2.copy().reshape(m*T,d)
+    opt_val_list = []
+    for i in range(num_trials):
+        print(f'Trial {i+1}: ')
 
-    phasesX, val = optimize_phases(X=newX, Y=newY)
-    newX = newX * phasesX[:, None]
 
-    #val = np.linalg.norm(newX - newY)**2
-    val_prev = val
-    print('init phase: ', val)
-    while val_prev > tol:
-        k += 1
-        print(k)
-        neworder,val = optimize_permutation(spectrumA=newX.reshape(m, T, d), spectrumB=newY.reshape(m, T, d))
-        print('perm: ', val)
+        if i > 1:
+            random_U = random_unitary(2 ** num_qubits).data
+            random_order = np.random.permutation(num_anchors)
+            random_phases = np.random.uniform(0, 2 * np.pi, m * T)
 
-        phasesX,val = optimize_phases(X=newX, Y=newY.reshape(m,T,d)[neworder].reshape(m*T,d))
-        newX = newX * phasesX[:, None]
-        print('phase after perm: ', val)
+            perturbed_spectrum_V1 = spectrum_V1[random_order].reshape(m * T, d)
+            perturbed_spectrum_V1 = perturbed_spectrum_V1 * np.exp(1j * random_phases)[:, None]
+            perturbed_spectrum_V1 = perturbed_spectrum_V1 @ random_U
+            perturbed_spectrum_V1 = perturbed_spectrum_V1.reshape(m, T, d)
 
-        V,val = optimize_unitary(X=newX, Y=newY)
-        print('unitary: ', val)
-        phasesX,val = optimize_phases(X=newX @ V, Y=newY)
-        newX = newX * phasesX[:, None]
-        print('phase after unitary: ', val)
+        elif i == 1:
+            print('HELLO')
+            counter_unitary = get_counter_unitary(spectrum_V1, spectrum_V2, V1, V2, qargs1, qargs2)
+            perturbed_spectrum_V1 = spectrum_V1.reshape(m * T, d)
+            perturbed_spectrum_V1 = perturbed_spectrum_V1 @ counter_unitary
+            perturbed_spectrum_V1 = perturbed_spectrum_V1.reshape(m, T, d)
 
-        if abs(val_prev - val) < tol:
-            opt_sum_fid = (2*spectrum_V1.shape[0]*spectrum_V1.shape[1] - val)/2.
-            print(val_prev, val)
-            return opt_sum_fid
         else:
-            val_prep = val
+            perturbed_spectrum_V1 = spectrum_V1.copy()
+
+        opt_val = optimization_routine(spectrum_V1=perturbed_spectrum_V1, spectrum_V2=spectrum_V2, tol=tol)
+        opt_val_list.append(opt_val)
+
+        if np.isclose(opt_val, m*T):
+            break
+
+    opt_val_list = np.array(opt_val_list)
+
+    print(f'best = {opt_val_list.max()}, mean = {opt_val_list.mean()}, sample variance = {opt_val_list.var()}')
+    return opt_val_list.max()
 
 
 
@@ -200,4 +270,6 @@ def compute_shape_distance(V1: str, V2: str, num_qubits: int) -> dict:
     return all_distances
 
 if __name__ == '__main__':
-    print(compute_shape_distance('ry', 'rx', num_qubits=1))
+    print(compute_shape_distance('x', 'y', num_qubits=4))
+
+
