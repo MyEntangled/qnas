@@ -2,7 +2,10 @@ import numpy as np
 import scipy.linalg
 from qiskit import QuantumCircuit
 import qiskit.quantum_info as qi
+
+import gate_positioning
 from QuOTMANN.gate_info import SINGLE_QUBIT_DETERMINISTIC_GATES, SINGLE_QUBIT_VARIATIONAL_GATES, TWO_QUBIT_DETERMINISTIC_GATES, TWO_QUBIT_VARIATIONAL_GATES, ADMISSIBLE_GATES, DIRECTED_GATES, UNITARY
+
 import pickle
 
 '''
@@ -44,8 +47,6 @@ def _get_core_distance(matrix1, matrix2, normtype='nuc'):
     H1, t1 = get_normalized_Hamiltonian(matrix1)
     H2, t2 = get_normalized_Hamiltonian(matrix2)
     return np.linalg.norm(H1 - H2, ord=normtype)
-
-
 
 def compute_core_distance(V1, V2):
     assert V1 in ADMISSIBLE_GATES and V2 in ADMISSIBLE_GATES, "Input gates are not admissible."
@@ -224,55 +225,7 @@ def compute_core_distance(V1, V2):
                 ALL_DISTANCES['_'.join([V1, V2, 'd'])] = _get_core_distance(matrix1, matrix2)
 
     return ALL_DISTANCES
-# def compute_core_distance(V1, V2):
-#
-#     assert V1 in ADMISSIBLE_GATES and V2 in ADMISSIBLE_GATES, "Input gates are not admissible."
-#     num_qubits_V1 = 1 if V1 in SINGLE_QUBIT_DETERMINISTIC_GATES + SINGLE_QUBIT_VARIATIONAL_GATES else 2
-#     num_qubits_V2 = 1 if V2 in SINGLE_QUBIT_DETERMINISTIC_GATES + SINGLE_QUBIT_VARIATIONAL_GATES else 2
-#     is_variational_V1 = 1 if V1 in SINGLE_QUBIT_VARIATIONAL_GATES + TWO_QUBIT_VARIATIONAL_GATES else 0
-#     is_variational_V2 = 1 if V2 in SINGLE_QUBIT_VARIATIONAL_GATES + TWO_QUBIT_VARIATIONAL_GATES else 0
-#
-#     if num_qubits_V1 == num_qubits_V2:
-#         if is_variational_V1:
-#             H_V1, t_V1 = get_normalized_Hamiltonian(UNITARY[V1](1).to_matrix()) # 1 is just a placeholder parameter
-#         else:
-#             H_V1, t_V1 = get_normalized_Hamiltonian(UNITARY[V1]().to_matrix())
-#
-#         if is_variational_V2:
-#             #print(UNITARY[V2])
-#             H_V2, t_V2 = get_normalized_Hamiltonian(UNITARY[V2](1).to_matrix())
-#         else:
-#             H_V2, t_V2 = get_normalized_Hamiltonian(UNITARY[V2]().to_matrix())
-#
-#     else: # V1 and V2 have different dimension
-#         if num_qubits_V1 == 1: # V1 for 1 qubit, V2 for 2 qubits
-#             if is_variational_V1:
-#                 H_V1, t_V1 = get_normalized_Hamiltonian(
-#                     np.kron(np.eye(2, dtype=np.complex_), UNITARY[V1](1).to_matrix()))
-#             else:
-#                 H_V1, t_V1 = get_normalized_Hamiltonian(
-#                     np.kron(np.eye(2, dtype=np.complex_), UNITARY[V1]().to_matrix()))
-#
-#             if is_variational_V2:
-#                 H_V2, t_V2 = get_normalized_Hamiltonian(UNITARY[V2](1).to_matrix())
-#             else:
-#                 H_V2, t_V2 = get_normalized_Hamiltonian(UNITARY[V2]().to_matrix())
-#
-#         else: # V1 for 2 qubits, V2 for 1 qubit
-#             if is_variational_V1:
-#                 H_V1, t_V1 = get_normalized_Hamiltonian(UNITARY[V1](1).to_matrix())
-#             else:
-#                 H_V1, t_V1 = get_normalized_Hamiltonian(UNITARY[V1]().to_matrix())
-#
-#             if is_variational_V2:
-#                 H_V2, t_V2 = get_normalized_Hamiltonian(
-#                     np.kron(np.eye(2, dtype=np.complex_), UNITARY[V2](1).to_matrix()))
-#             else:
-#                 H_V2, t_V2 = get_normalized_Hamiltonian(
-#                     np.kron(np.eye(2, dtype=np.complex_), UNITARY[V2]().to_matrix()))
-#
-#     return np.linalg.norm(H_V1 - H_V2, ord = 'nuc')
-#     #return operator_distance(H_V1,H_V2,'nuc')
+
 
 
 if __name__ == '__main__':

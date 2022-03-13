@@ -10,6 +10,7 @@ from utility.data_encoding import FeatureMap
 from utility.quantum_nn import QuantumNeuralNetwork
 from utility.tools import *
 
+from qiskit.quantum_info import Statevector
 
 def sample_haar(dim, num_samples):
     """
@@ -129,16 +130,17 @@ def KL_knn_estimator(s1, s2, knn=1):
 #     return min(mean_expr, state_dim)
 
 
-def _get_expr(inds, params, model, results):
+def _get_expr(inds, params, PQC, results):
     for i, param in zip(inds, params):
         # circuit_ = model.PQC.bind_parameters(_compose_param_dict(model,param))
-        param_dict = compose_param_dict(model.PQC.parameters, param)
-        circuit_ = model.PQC.bind_parameters(param_dict)
+        #param_dict = compose_param_dict(model.PQC.parameters, param)
+        #circuit_ = model.PQC.bind_parameters(param_dict)
+        circuit_ = PQC.bind_parameters(param)
 
-        result = model.sv.evolve(circuit_)
+        result = Statevector.from_label('0' * PQC.num_qubits).evolve(circuit_)
 
-        start = 2 * i * model.state_dim
-        end = (2 * i + 2) * model.state_dim
+        start = 2 * i * (2**PQC.num_qubits)
+        end = (2 * i + 2) * (2**PQC.num_qubits)
 
         results[start:end:2] = np.real(result.data)
         results[start + 1:end:2] = np.imag(result.data)
@@ -147,11 +149,10 @@ def _get_expr(inds, params, model, results):
         # print(results[start:end])
 
 
-def get_expressibility(model, num_samples: int, num_iterations: Union[int, List, np.ndarray] = 1):
+def get_expressibility(PQC, num_samples: int, num_iterations: Union[int, List, np.ndarray] = 1):
 
-    circuit = model.PQC
-    param_dim = model.param_dim
-    state_dim = 2 ** model.num_qubits
+    param_dim = PQC.num_parameters
+    state_dim = 2 ** PQC.num_qubits
     thetamin = 0
     thetamax = 2 * np.pi
 
@@ -174,7 +175,7 @@ def get_expressibility(model, num_samples: int, num_iterations: Union[int, List,
         indices = prepare_multiprocesses(2 * num_samples, num_processes)
         results = mp.Array('d', (2 * 2 * num_samples * state_dim))
 
-        processes = [mp.Process(target=_get_expr, args=(inds, params[inds], model, results))
+        processes = [mp.Process(target=_get_expr, args=(inds, params[inds], PQC, results))
                      for inds in indices]
 
         for p in processes:
@@ -212,24 +213,34 @@ def get_expressibility(model, num_samples: int, num_iterations: Union[int, List,
 
 if __name__ == '__main__':
 
-    feature_map = FeatureMap('PauliFeatureMap', 4, 1)
+    # feature_map = FeatureMap('PauliFeatureMap', 4, 1)
+    #
+    # template = AnsatzTemplate()
+    # template.construct_simple_template(4, 1)
+    #
+    # model = QuantumNeuralNetwork(feature_map, template, platform='Qiskit')
+    # # model.visualize()
+    #
+    # print(model.num_qubits, model.input_dim, model.param_dim)
 
-    template = AnsatzTemplate()
-    template.construct_simple_template(4, 1)
+    from embedding import qc_embedding
 
-    model = QuantumNeuralNetwork(feature_map, template, platform='Qiskit')
-    # model.visualize()
+    num_qubits = 4
+    MAX_OP_NODES = 6
 
-    print(model.num_qubits, model.input_dim, model.param_dim)
+    encoding_length = (num_qubits + 1) * MAX_OP_NODES
+    bounds = np.array([[-.2] * encoding_length, [1.0] * encoding_length])
+    x = bounds[0] + (bounds[1] - bounds[0]) * np.random.rand(encoding_length)
+    qc = qc_embedding.enc_to_qc(num_qubits=num_qubits, encoding=x)
 
     new_expr = []
 
     start_time = time.time()
 
-    sample_range = range(10000,10001,10000)
+    sample_range = range(2000,10001,2000)
 
     for sample in sample_range:
-        new_expr.append(get_expressibility(model, sample, 10))
+        new_expr.append(get_expressibility(qc, sample, 10))
 
     print("--- %s seconds ---" % (time.time() - start_time))
 

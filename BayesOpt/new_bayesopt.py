@@ -3,6 +3,8 @@ import torch
 
 from embedding import qc_embedding
 from QuOTMANN import optimal_transport
+from quantum_obj import get_QFT_states, maximize_QFT_fidelity
+
 import gpytorch
 
 from botorch.models import SingleTaskGP
@@ -31,6 +33,12 @@ warnings.filterwarnings('ignore', category=RuntimeWarning)
 from botorch.utils.transforms import standardize, normalize, unnormalize
 from botorch.utils.sampling import draw_sobol_samples
 
+
+#### Save resources when computing covariance kernel by reusing previous kernel (of smaller size)
+#### Find a way to explain why all beta[i] = 0
+#https://github.com/kirthevasank/nasbot/blob/3c745dc986be30e3721087c8fa768099032a0802/nn/nn_gp.py#L120
+#https://github.com/kirthevasank/nasbot/blob/3c745dc986be30e3721087c8fa768099032a0802/nn/unittest_nn_gp.py#L56
+
 class NewCircuitKernel(gpytorch.kernels.Kernel):
 
     # We will register the parameter when initializing the kernel
@@ -50,6 +58,7 @@ class NewCircuitKernel(gpytorch.kernels.Kernel):
         self.register_parameter(
             name='raw_alphanorm', parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, 1, 1))
         )
+
         for i in range(self.num_str_weights):
             self.register_parameter(
                 name='raw_beta_'+str(i), parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, 1, 1))
@@ -186,7 +195,7 @@ class NewCircuitKernel(gpytorch.kernels.Kernel):
                     weighted_dist[i, j] = sum([ self.beta(idx=idx) * dist for idx, dist in enumerate(all_dist) ])
                     weighted_distnorm_square[i, j] = sum([ self.betanorm(idx=idx) * (distnorm ** 2) for idx, distnorm in enumerate(all_distnorm) ])
 
-        print(torch.mean(weighted_dist), torch.mean(weighted_distnorm_square))
+        #print(torch.mean(weighted_dist), torch.mean(weighted_distnorm_square))
         K = self.alpha * torch.exp(-weighted_dist) + self.alphanorm * torch.exp(-weighted_distnorm_square)
 
         #print(x1.shape, x2.shape, K.shape, type(K))
@@ -195,7 +204,7 @@ class NewCircuitKernel(gpytorch.kernels.Kernel):
         return gpytorch.lazify(K)
 
     def circuit_distance(self, circ1, circ2, nas_cost=1, nu_list=[0.1]):
-        return optimal_transport.circuit_distance(PQC_1=circ1, PQC_2=circ2, nas_cost=nas_cost, nu_list=nu_list)
+        return optimal_transport.circuit_distance_POT(PQC_1=circ1, PQC_2=circ2, nas_cost=nas_cost, nu_list=nu_list)
 
 # class CustomDistGPKernel(gpytorch.kernels.Kernel):
 #     # the sinc kernel is stationary
@@ -376,23 +385,25 @@ class CircuitKernel(gpytorch.kernels.Kernel):
     def circuit_distance(self, circ1, circ2):
         return optimal_transport.circuit_distance(PQC_1=circ1, PQC_2=circ2)
 
-class FirstSincKernel(gpytorch.kernels.Kernel):
-    # the sinc kernel is stationary
-    has_lengthscale = False
 
-    # this is the kernel function
-    def forward(self, x1, x2, **params):
-        # calculate the distance between inputs
-        #x1 = x1.div(self.lengthscale)
-        #x2 = x2.div(self.lengthscale)
-        diff = self.covar_dist(x1, x2, **params)
-        # prevent divide by 0 errors
-        diff.where(diff == 0, torch.as_tensor(1e-20).to(x1))
-        K = torch.sin(diff).div(diff)
-        print(x1.shape, x2.shape, K.shape, type(K))
-        print('kernel: ', K)
 
-        return gpytorch.lazify(K)
+# class FirstSincKernel(gpytorch.kernels.Kernel):
+#     # the sinc kernel is stationary
+#     has_lengthscale = False
+#
+#     # this is the kernel function
+#     def forward(self, x1, x2, **params):
+#         # calculate the distance between inputs
+#         #x1 = x1.div(self.lengthscale)
+#         #x2 = x2.div(self.lengthscale)
+#         diff = self.covar_dist(x1, x2, **params)
+#         # prevent divide by 0 errors
+#         diff.where(diff == 0, torch.as_tensor(1e-20).to(x1))
+#         K = torch.sin(diff).div(diff)
+#         print(x1.shape, x2.shape, K.shape, type(K))
+#         print('kernel: ', K)
+#
+#         return gpytorch.lazify(K)
 
 
 class CustomGPModel(ExactGP, GPyTorchModel):
@@ -409,6 +420,7 @@ class CustomGPModel(ExactGP, GPyTorchModel):
         mean_x = self.mean_module(x)
         covar_x = self.covar_module(x)
         return MultivariateNormal(mean_x, covar_x)
+
 
 class QNN_BO():
     def __init__(self, num_qubits, MAX_OP_NODES, N_TRIALS, N_BATCH, BATCH_SIZE, MC_SAMPLES, device=None, dtype=None):
@@ -429,6 +441,7 @@ class QNN_BO():
     def obj_func(self, X):
         """Feasibility weighted objective"""
         #print(X)
+
         latent_func_values = []
         for enc in X.detach().numpy():
             qc = self.vec_to_circuit(vec=enc)
@@ -436,8 +449,9 @@ class QNN_BO():
         return latent_func_values
 
     def latent_func(self,circuit):
-        f = circuit.num_parameters #/ self.MAX_OP_NODES
-        return torch.as_tensor(f, device=self.device, dtype=self.dtype)
+        #f = circuit.num_parameters #/ self.MAX_OP_NODES
+        opt_param, opt_val = maximize_QFT_fidelity(PQC=circuit)
+        return torch.as_tensor(opt_val, device=self.device, dtype=self.dtype)
 
     def vec_to_circuit(self,vec):
         qc = qc_embedding.enc_to_qc(num_qubits=self.num_qubits, encoding=vec)
@@ -551,7 +565,6 @@ class QNN_BO():
                 res = minimize(fun=neg_acq_func, x0=x0, method='L-BFGS-B', bounds=np.array(list(zip(bounds[0].numpy(), bounds[1].numpy()))))
                 candidates[i] = torch.from_numpy(res.x).to(candidates)
         return candidates
-
 
     ## Helper function that performs essential BO steps
     def optimize_acqf_and_get_observation(self, acq_func, bounds):
@@ -706,18 +719,19 @@ class QNN_BO():
 
 
 if __name__ == '__main__':
+    np.random.seed(20)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dtype = torch.double
 
-    BATCH_SIZE = 3
+    BATCH_SIZE = 5
     num_qubits = 2
-    MAX_OP_NODES = 12
+    MAX_OP_NODES = 6
 
     encoding_length = (num_qubits + 1) * MAX_OP_NODES
     bounds = torch.tensor([[0.] * encoding_length, [1.0] * encoding_length], device=device, dtype=dtype)
 
     N_TRIALS = 1
-    N_BATCH = 20
+    N_BATCH = 10
     MC_SAMPLES = 2048
 
     qnnbo = QNN_BO(

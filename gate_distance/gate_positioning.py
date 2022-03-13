@@ -71,7 +71,7 @@ def all_relative_positions(V1:str, V2:str, num_qubits:int) -> List:
                 ## Overlap on one qubit
                 positioning = _append_to_positions(positioning, V1, V2, num_qubits, 'over', [[0], [0, 1]])
                 ## On different registers
-                positioning = _append_to_positions(positioning, V1, V2, num_qubits, 'over', [[2], [0, 1]])
+                positioning = _append_to_positions(positioning, V1, V2, num_qubits, 'd', [[2], [0, 1]])
 
     else: # num_qubits_1 == 2
         if num_qubits_2 == 1:
@@ -131,7 +131,7 @@ def all_relative_positions(V1:str, V2:str, num_qubits:int) -> List:
 
     return positioning
 
-def get_pos_from_gate_name(V1:str, V2:str, qargs:List) -> dict:
+def get_pos_from_gate_name(V1:str, V2:str, qargs:List) -> str:
     assert V1 in ADMISSIBLE_GATES, f'gate1 ({V1}) does not belong to ADMISSIBLE_GATES'
     assert V2 in ADMISSIBLE_GATES, f'gate2 ({V2}) does not belong to ADMISSIBLE_GATES'
 
@@ -142,8 +142,8 @@ def get_pos_from_gate_name(V1:str, V2:str, qargs:List) -> dict:
     qarg1 = qargs[0]
     qarg2 = qargs[1]
 
-    assert len(qarg1) == num_qubits_1, f"qarg1({qarg1}) must have length equal to V1' num_qubits({num_qubits_1})"
-    assert len(qarg2) == num_qubits_2, f"qarg2({qarg2}) must have length equal to V2' num_qubits({num_qubits_2})"
+    assert len(qarg1) == num_qubits_1, f"qarg1({qarg1}) must have length equal to V1's num_qubits({num_qubits_1})"
+    assert len(qarg2) == num_qubits_2, f"qarg2({qarg2}) must have length equal to V2's num_qubits({num_qubits_2})"
     assert len(qarg1) == len(set(qarg1)), f"qarg1({qarg1}) contains a duplicated qubit register."
     assert len(qarg2) == len(set(qarg2)), f"qarg2({qarg2}) contains a duplicated qubit register."
 
@@ -213,7 +213,7 @@ def get_pos_from_gate_name(V1:str, V2:str, qargs:List) -> dict:
             else:
                 return 'd'
         else: # V1 and V2 are NON-DIRECTED
-            if qarg1[0] in qarg2 and qarg1[0] in qarg2:
+            if qarg1[0] in qarg2 and qarg1[1] in qarg2:
                 return 's'
             elif qarg1[0] in qarg2 or qarg1[1] in qarg2: # in this elif, only either one can happen
                 return 'over'
@@ -228,3 +228,11 @@ def get_pos_from_gate_DAGobj(node1:DAGNode, node2:DAGNode) -> dict:
     qargs = [qarg1, qarg2]
     return get_pos_from_gate_name(V1, V2, qargs)
 
+if __name__ == '__main__':
+    print(all_relative_positions('h','rxx',2))
+    print(all_relative_positions('h','rxx',3))
+    print(all_relative_positions('h','rxx',4))
+
+    print(all_relative_positions('rxx', 'h', 2))
+    print(all_relative_positions('rxx', 'h', 3))
+    print(all_relative_positions('rxx', 'h', 4))
