@@ -9,6 +9,6 @@ $ source shell/add_pwd_to_pythonpath.sh
 
 And then run example scripts, such as:
 ```bash
-$ python BayesOpt/qnn_search.py
+$ python src/main.py
 ```
 
