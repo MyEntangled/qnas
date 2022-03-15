@@ -4,11 +4,10 @@ from qiskit import QuantumCircuit
 from qiskit.circuit import ParameterVector
 import qiskit.circuit.library as library
 
-from utility.ansatz_template import AnsatzTemplate
-from utility.data_encoding import FeatureMap
-from utility.quantum_nn import QuantumNeuralNetwork
+from retired.utility import AnsatzTemplate
+from retired.utility import FeatureMap
+from retired.utility import QuantumNeuralNetwork
 
-from typing import Union
 import warnings
 warnings.filterwarnings("ignore") # to surpass a decapration warning when calling qubit.index
 

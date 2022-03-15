@@ -6,8 +6,9 @@ __pycache__
 BayesOpt/__pycache__
 gate_distance/.DS_Store
 gate_distance/__pycache__
-utility/__pycache__
+retired/utility/__pycache__
 training/__pycache__
 embedding/__pycache__
 QuOTMANN/__pycache__
 surfer/__pycache__
+notebook testing

@@ -2,21 +2,13 @@
 
 # basic
 import numpy as np
-import matplotlib.pyplot as plt
-import csv
-from typing import Union
 
 # qiskit
 from qiskit import Aer, QuantumCircuit
-from qiskit.opflow import Z, I, StateFn
 from qiskit.utils import QuantumInstance
-from qiskit.circuit import Parameter, Instruction
 from qiskit.circuit.library import TwoLocal, ZZFeatureMap
-from qiskit.algorithms.optimizers import COBYLA
 
 # qiskit machine learning
-from qiskit_machine_learning.neural_networks import TwoLayerQNN, CircuitQNN
-from qiskit_machine_learning.algorithms.classifiers import NeuralNetworkClassifier, VQC
 
 # sklearn
 from sklearn import datasets
@@ -25,7 +17,6 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.decomposition import PCA
 
 # from code
-from utility.ansatz_template import AnsatzTemplate
 
 
 # --------------------------------------------------------------------------------------

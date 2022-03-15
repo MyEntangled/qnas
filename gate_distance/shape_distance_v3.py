@@ -1,10 +1,6 @@
-import MUBs
-import fubini_distance
-import time
 import gate_positioning
 
 import numpy as np
-import scipy
 
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import Statevector, random_unitary, Operator
@@ -344,7 +340,7 @@ if __name__ == '__main__':
 
     import pickle
 
-    filename = './raw_all_shape_distances.pkl'
+    filename = './all_shape_distances.pkl'
 
     try:
         with open(filename, 'rb') as f:

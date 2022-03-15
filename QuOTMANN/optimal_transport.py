@@ -121,19 +121,19 @@ def circuit_distance_POT(PQC_1, PQC_2, eta:float=.1, nas_cost:float=1., nu_list:
     gate_mass_2 = np.array([gate_mass(op.name, d2) for op in op_nodes_2])
 
     if len(gate_mass_1) == 0 and len(gate_mass_2) == 0: ## Two empty circuits
-        return 0, 0
+        return [0], [0]
 
     if len(gate_mass_1) > 0 and len(gate_mass_2) == 0: ## Second circuit is empty
         num_deterministic_gates_1 = np.count_nonzero(gate_mass_1 == 0)
         if num_deterministic_gates_1 > 0:
             gate_mass_1[gate_mass_1 == 0] = eta * gate_mass_1.sum() / num_deterministic_gates_1
-        return nas_cost * gate_mass_1.sum(), nas_cost
+        return [nas_cost * gate_mass_1.sum()], [nas_cost]
 
     if len(gate_mass_2) > 0 and len(gate_mass_1) == 0: ## First circuit is empty
         num_deterministic_gates_2 = np.count_nonzero(gate_mass_2 == 0)
         if num_deterministic_gates_2 > 0:
             gate_mass_2[gate_mass_2 == 0] = eta * gate_mass_2.sum() / num_deterministic_gates_2
-        return nas_cost * gate_mass_2.sum(), nas_cost
+        return [nas_cost * gate_mass_2.sum()], [nas_cost]
 
     ## Gate mass of each deterministic gate = 0.1/num_deterministic_gates * sum(variational gate mass)
     num_deterministic_gates_1 = np.count_nonzero(gate_mass_1 == 0)
@@ -147,7 +147,7 @@ def circuit_distance_POT(PQC_1, PQC_2, eta:float=.1, nas_cost:float=1., nu_list:
     total_mass_1 = sum(gate_mass_1)
     total_mass_2 = sum(gate_mass_2)
     if total_mass_1 + total_mass_2 == 0.:
-        return 0,0
+        return [0],[0]
 
     C_lmm = label_mismatch_cost_matrix(PQC_1, PQC_2)
     #start = time.time()
