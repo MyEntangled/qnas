@@ -1,5 +1,5 @@
 import numpy as np
-import torch
+import torch, random
 
 from embedding import qc_embedding
 from QuOTMANN import optimal_transport, structural_cost
@@ -627,8 +627,17 @@ class QNN_BO():
         plt.show()
 
 
+def set_seed(seed):
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic=True
+    torch.backends.cudnn.benchmark = False
+    torch.cuda.manual_seed_all(seed)
+
 if __name__ == '__main__':
-    np.random.seed(20)
+    set_seed(0)
     torch.set_printoptions(precision=7)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dtype = torch.double
