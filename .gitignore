@@ -4,3 +4,5 @@
 __pycache__
 .idea
 BayesOpt/__pycache__
+gate_distance/.DS_Store
+gate_distance/__pycache__
