@@ -18,9 +18,9 @@ def label_mismatch_cost_matrix(PQC_1, PQC_2):
     assert PQC_1.num_qubits == PQC_2.num_qubits, "Two quantum circuits must have the same number of qubits."
     num_qubits_str = str(PQC_1.num_qubits)
 
-    with open('../gate_distance/all_shape_distances.pkl', 'rb') as f:
+    with open('gate_distance/all_shape_distances.pkl', 'rb') as f:
         all_shape_distances = pickle.load(f)
-    with open('../gate_distance/all_core_distances.pkl', 'rb') as f:
+    with open('gate_distance/all_core_distances.pkl', 'rb') as f:
         all_core_distances = pickle.load(f)
 
     dag_1, nx_dag_1, in_nodes_1, out_nodes_1 = create_dag(PQC_1)
