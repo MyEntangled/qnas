@@ -1,5 +1,5 @@
 import numpy as np
-import torch, random
+import torch
 
 from embedding import qc_embedding
 from QuOTMANN import optimal_transport, structural_cost
@@ -44,14 +44,20 @@ from botorch.utils.sampling import draw_sobol_samples
 class CircuitDistKernel(gpytorch.kernels.Kernel):
 
     # We will register the parameter when initializing the kernel
-    def __init__(self, decoder, num_qubits, MAX_OP_NODES, nu_list, device=None, dtype=None, priors=None, constraints=None, **kwargs):
+    def __init__(self, encoder, decoder, num_qubits, MAX_OP_NODES, nu_list,
+                 device=None, dtype=None, priors=None, constraints=None,
+                 distance_dict={}, structral_paths_dict={}, **kwargs):
         super().__init__(**kwargs)
 
+        self.encoder = encoder
         self.decoder = decoder
         self.num_qubits = num_qubits
         self.MAX_OP_NODES = MAX_OP_NODES
         self.nu_list = nu_list
         self.num_str_weights = len(nu_list)
+
+        self.distance_dict = distance_dict
+        self.structural_paths_dict = structral_paths_dict
 
         # register the raw parameter
         self.register_parameter(
@@ -175,13 +181,35 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
                 for q in range(weighted_dist.shape[1]):
                     q_circs_1 = []
                     q_circs_2 = []
+
                     for i in range(weighted_dist.shape[1]):
                         qc1 = self.decoder(vec=x1[k, q, i].detach().numpy())
-                        qc1.lengths_to_in_nodes, qc1.lengths_to_out_nodes = structural_cost.structural_path_lengths_circ(qc1)
+                        qc1.vec_repr = self.encoder(qc=qc1)
+                        qc1.vec_repr_bytes = qc1.vec_repr.tobytes()
+                        try:
+                            qc1.lengths_to_in_nodes, qc1.lengths_to_out_nodes = self.structural_paths_dict[qc1.vec_repr_bytes]
+                        except:
+                            qc1.lengths_to_in_nodes, qc1.lengths_to_out_nodes = structural_cost.structural_path_lengths_circ(qc1)
+                            self.structural_paths_dict[qc1.vec_repr_bytes] = (qc1.lengths_to_in_nodes, qc1.lengths_to_out_nodes)
+                        else:
+                            #print("Structural path dict: ", len(self.structural_paths_dict))
+                            pass
+
                         q_circs_1.append(qc1)
+
                     for j in range(weighted_dist.shape[2]):
                         qc2 = self.decoder(vec=x2[k, q, j].detach().numpy())
-                        qc2.lengths_to_in_nodes, qc2.lengths_to_out_nodes = structural_cost.structural_path_lengths_circ(qc2)
+                        qc2.vec_repr = self.encoder(qc=qc2)
+                        qc2.vec_repr_bytes = qc2.vec_repr.tobytes()
+                        try:
+                            qc2.lengths_to_in_nodes, qc2.lengths_to_out_nodes = self.structural_paths_dict[qc2.vec_repr_bytes]
+                        except:
+                            qc2.lengths_to_in_nodes, qc2.lengths_to_out_nodes = structural_cost.structural_path_lengths_circ(qc2)
+                            self.structural_paths_dict[qc2.vec_repr_bytes] = (qc2.lengths_to_in_nodes, qc2.lengths_to_out_nodes)
+                        else:
+                            #print("Structural path dict: ", len(self.structural_paths_dict))
+                            pass
+
                         q_circs_2.append(qc2)
 
                     batch_circs_1.append(q_circs_1)
@@ -197,7 +225,23 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
                         for j in range(weighted_dist.shape[2]):
                             qc1 = all_circuits_1[k][q][i]
                             qc2 = all_circuits_2[k][q][j]
-                            all_dist, all_distnorm = self.circuit_distance(circ1=qc1, circ2=qc2, nu_list=self.nu_list)
+
+                            try:
+                                one_two_repr = np.stack([qc1.vec_repr, qc2.vec_repr])
+                                two_one_repr = np.stack([qc2.vec_repr, qc1.vec_repr])
+                                one_two_repr_bytes = one_two_repr.tobytes()
+                                two_one_repr_bytes = two_one_repr.tobytes()
+
+                                all_dist, all_distnorm = self.distance_dict[one_two_repr_bytes]
+                            except:
+                                all_dist, all_distnorm = self.circuit_distance(circ1=qc1, circ2=qc2, nu_list=self.nu_list)
+                                self.distance_dict[one_two_repr_bytes] = (all_dist, all_distnorm)
+                                self.distance_dict[two_one_repr_bytes] = (all_dist, all_distnorm)
+
+                            else:
+                                #print("Distance dict", len(self.distance_dict))
+                                pass
+
                             weighted_dist[k,q,i,j] =  sum([ self.beta(idx=idx) * dist for idx,dist in enumerate(all_dist) ])
                             weighted_distnorm_square[k,q,i,j] = sum([ self.betanorm(idx=idx) * (distnorm**2) for idx,distnorm in enumerate(all_distnorm) ])
                             counter += 1
@@ -215,11 +259,31 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
                 batch_circs_2 = []
                 for i in range(weighted_dist.shape[1]):
                     qc1 = self.decoder(vec=x1[k, i].detach().numpy())
-                    qc1.lengths_to_in_nodes, qc1.lengths_to_out_nodes = structural_cost.structural_path_lengths_circ(qc1)
+                    qc1.vec_repr = self.encoder(qc=qc1)
+                    qc1.vec_repr_bytes = qc1.vec_repr.tobytes()
+                    try:
+                        qc1.lengths_to_in_nodes, qc1.lengths_to_out_nodes = self.structural_paths_dict[qc1.vec_repr_bytes]
+                    except:
+                        qc1.lengths_to_in_nodes, qc1.lengths_to_out_nodes = structural_cost.structural_path_lengths_circ(qc1)
+                        self.structural_paths_dict[qc1.vec_repr_bytes] = (qc1.lengths_to_in_nodes, qc1.lengths_to_out_nodes)
+                    else:
+                        #print("Structural path dict: ", len(self.structural_paths_dict))
+                        pass
+
                     batch_circs_1.append(qc1)
                 for j in range(weighted_dist.shape[2]):
                     qc2 = self.decoder(vec=x2[k, j].detach().numpy())
-                    qc2.lengths_to_in_nodes, qc2.lengths_to_out_nodes = structural_cost.structural_path_lengths_circ(qc2)
+                    qc2.vec_repr = self.encoder(qc=qc2)
+                    qc2.vec_repr_bytes = qc2.vec_repr.tobytes()
+                    try:
+                        qc2.lengths_to_in_nodes, qc2.lengths_to_out_nodes = self.structural_paths_dict[qc2.vec_repr_bytes]
+                    except:
+                        qc2.lengths_to_in_nodes, qc2.lengths_to_out_nodes = structural_cost.structural_path_lengths_circ(qc2)
+                        self.structural_paths_dict[qc2.vec_repr_bytes] = (qc2.lengths_to_in_nodes, qc2.lengths_to_out_nodes)
+                    else:
+                        #print("Structural path dict: ", len(self.structural_paths_dict))
+                        pass
+
                     batch_circs_2.append(qc2)
 
 
@@ -231,7 +295,21 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
                     for j in range(weighted_dist.shape[2]):
                         qc1 = all_circuits_1[k][i]
                         qc2 = all_circuits_2[k][j]
-                        all_dist, all_distnorm = self.circuit_distance(circ1=qc1, circ2=qc2, nu_list=self.nu_list)
+                        try:
+                            one_two_repr = np.stack([qc1.vec_repr, qc2.vec_repr])
+                            two_one_repr = np.stack([qc2.vec_repr, qc1.vec_repr])
+                            one_two_repr_bytes = one_two_repr.tobytes()
+                            two_one_repr_bytes = two_one_repr.tobytes()
+
+                            all_dist, all_distnorm = self.distance_dict[one_two_repr_bytes]
+                        except:
+                            all_dist, all_distnorm = self.circuit_distance(circ1=qc1, circ2=qc2, nu_list=self.nu_list)
+                            self.distance_dict[one_two_repr_bytes] = (all_dist, all_distnorm)
+                            self.distance_dict[two_one_repr_bytes] = (all_dist, all_distnorm)
+                        else:
+                            #print("Distance dict", len(self.distance_dict))
+                            pass
+
                         weighted_dist[k,i,j] =  sum([ self.beta(idx=idx) * dist for idx,dist in enumerate(all_dist) ])
                         weighted_distnorm_square[k,i,j] = sum([ self.betanorm(idx=idx) * (distnorm**2) for idx,distnorm in enumerate(all_distnorm) ])
                         counter += 1
@@ -247,22 +325,58 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
             all_circuits_2 = []
             for i in range(weighted_dist.shape[0]):
                 qc1 = self.decoder(vec=x1[i].detach().numpy())
-                qc1.lengths_to_in_nodes, qc1.lengths_to_out_nodes = structural_cost.structural_path_lengths_circ(qc1)
+                qc1.vec_repr = self.encoder(qc=qc1)
+                qc1.vec_repr_bytes = qc1.vec_repr.tobytes()
+                try:
+                    qc1.lengths_to_in_nodes, qc1.lengths_to_out_nodes = self.structural_paths_dict[qc1.vec_repr_bytes]
+                except:
+                    qc1.lengths_to_in_nodes, qc1.lengths_to_out_nodes = structural_cost.structural_path_lengths_circ(qc1)
+                    self.structural_paths_dict[qc1.vec_repr_bytes] = (qc1.lengths_to_in_nodes, qc1.lengths_to_out_nodes)
+                else:
+                    #print("Structural path dict: ", len(self.structural_paths_dict))
+                    pass
+
                 all_circuits_1.append(qc1)
+
             for j in range(weighted_dist.shape[1]):
                 qc2 = self.decoder(vec=x2[j].detach().numpy())
-                qc2.lengths_to_in_nodes, qc2.lengths_to_out_nodes = structural_cost.structural_path_lengths_circ(qc2)
+                qc2.vec_repr = self.encoder(qc=qc2)
+                qc2.vec_repr_bytes = qc2.vec_repr.tobytes()
+                try:
+                    qc2.lengths_to_in_nodes, qc2.lengths_to_out_nodes = self.structural_paths_dict[qc2.vec_repr_bytes]
+                except:
+                    qc2.lengths_to_in_nodes, qc2.lengths_to_out_nodes = structural_cost.structural_path_lengths_circ(qc2)
+                    self.structural_paths_dict[qc2.vec_repr_bytes] = (qc2.lengths_to_in_nodes, qc2.lengths_to_out_nodes)
+                else:
+                    #print("Structural path dict: ", len(self.structural_paths_dict))
+                    pass
+
                 all_circuits_2.append(qc2)
 
             for i in range(weighted_dist.shape[0]):
                 for j in range(weighted_dist.shape[1]):
                     qc1 = all_circuits_1[i]
                     qc2 = all_circuits_2[j]
-                    all_dist, all_distnorm = self.circuit_distance(circ1=qc1, circ2=qc2, nu_list=self.nu_list)
+                    try:
+                        one_two_repr = np.stack([qc1.vec_repr, qc2.vec_repr])
+                        two_one_repr = np.stack([qc2.vec_repr, qc1.vec_repr])
+                        one_two_repr_bytes = one_two_repr.tobytes()
+                        two_one_repr_bytes = two_one_repr.tobytes()
+
+                        all_dist, all_distnorm = self.distance_dict[one_two_repr_bytes]
+                    except:
+                        all_dist, all_distnorm = self.circuit_distance(circ1=qc1, circ2=qc2, nu_list=self.nu_list)
+                        self.distance_dict[one_two_repr_bytes] = (all_dist, all_distnorm)
+                        self.distance_dict[two_one_repr_bytes] = (all_dist, all_distnorm)
+                    else:
+                        #print("Distance dict", len(self.distance_dict))
+                        pass
+
                     weighted_dist[i,j] =  sum([ self.beta(idx=idx) * dist for idx,dist in enumerate(all_dist) ])
                     weighted_distnorm_square[i,j] = sum([ self.betanorm(idx=idx) * (distnorm**2) for idx,distnorm in enumerate(all_distnorm) ])
 
                     counter += 1
+                    #print(counter)
 
         #print(torch.mean(weighted_dist), torch.mean(weighted_distnorm_square))
         K = self.alpha * torch.exp(-weighted_dist) + self.alphanorm * torch.exp(-weighted_distnorm_square)
@@ -325,6 +439,9 @@ class QNN_BO():
         self.BATCH_SIZE = BATCH_SIZE
         self.MC_SAMPLES = MC_SAMPLES
 
+        self.distance_dict = {}
+        self.structural_paths_dict = {}
+
 
     ## PROBLEM SETUP
     def obj_func(self, X):
@@ -343,9 +460,10 @@ class QNN_BO():
         return torch.as_tensor(opt_val, device=self.device, dtype=self.dtype)
 
     def vec_to_circuit(self,vec):
-        qc = qc_embedding.enc_to_qc(num_qubits=self.num_qubits, encoding=vec)
-        #print(qc.draw())
-        return qc
+        return qc_embedding.enc_to_qc(num_qubits=self.num_qubits, encoding=vec)
+
+    def circuit_to_vec(self,qc):
+        return qc_embedding.qc_to_enc(qc=qc,MAX_OP_NODES=self.MAX_OP_NODES)
 
     ## MODEL INITIALIZATION
     def generate_initial_data(self, n):
@@ -370,12 +488,15 @@ class QNN_BO():
 
 
         if covar_module is None:
-            covar_module = CircuitDistKernel(decoder=self.vec_to_circuit,
+            covar_module = CircuitDistKernel(encoder=self.circuit_to_vec,
+                                             decoder=self.vec_to_circuit,
                                              num_qubits=self.num_qubits,
                                              MAX_OP_NODES=MAX_OP_NODES,
                                              nu_list=[0.1, 0.2, 0.4, 0.8],
                                              device=self.device,
                                              dtype=self.dtype,
+                                             distance_dict=self.distance_dict,
+                                             structral_paths_dict=self.structural_paths_dict
                                              )
 
 
@@ -621,30 +742,22 @@ class QNN_BO():
 
 
         plt.plot([0, self.N_BATCH * self.BATCH_SIZE], [1] * 2, 'k', label="true best bjective", linewidth=2)
-        ax.set_ylim(bottom=0.5)
+        ax.set_ylim(bottom=0.)
         ax.set(xlabel='number of observations (beyond initial points)', ylabel='best objective value')
         ax.legend(loc="lower right")
         plt.show()
 
 
-def set_seed(seed):
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    random.seed(seed)
-    torch.backends.cudnn.deterministic=True
-    torch.backends.cudnn.benchmark = False
-    torch.cuda.manual_seed_all(seed)
-
 if __name__ == '__main__':
-    set_seed(0)
+    np.random.seed(20)
+
     torch.set_printoptions(precision=7)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dtype = torch.double
 
     BATCH_SIZE = 5
-    num_qubits = 2
-    MAX_OP_NODES = 6
+    num_qubits = 3
+    MAX_OP_NODES = 15
 
     encoding_length = (num_qubits + 1) * MAX_OP_NODES
     bounds = torch.tensor([[0.] * encoding_length, [1.0] * encoding_length], device=device, dtype=dtype)

@@ -1,76 +1,103 @@
 import numpy as np
-from qiskit.quantum_info import Operator
-from scipy.special import kl_div
+import scipy.stats
+from qiskit.quantum_info import Statevector, state_fidelity
 
-# from retired.utility import AnsatzTemplate
-# from retired.utility import FeatureMap
-# from retired.utility import QuantumNeuralNetwork
+# def sample_pqc(num_samples, PQC):
+#     param_dim = PQC.num_parameters
+#     state_dim = 2 ** PQC.num_qubits
+#     thetamin = 0
+#     thetamax = 2 * np.pi
+#
+#     params = np.random.uniform(thetamin, thetamax, (2 * num_samples, param_dim))
+#
+#     result = np.zeros(num_samples)
+#     id = 0
+#     #initial_state = np.zeros(state_dim)
+#     #initial_state[0] = 1
+#     initial_state = Statevector.from_label('0'*PQC.num_qubits)
+#     for i in range(0,len(params),2):
+#         circuit_1 = PQC.bind_parameters(params[i])
+#         #result_1 = (Operator(circuit_1).data)@initial_state
+#         final_state_1 = initial_state.evolve(circuit_1)
+#         circuit_2 = PQC.bind_parameters(params[i+1])
+#         #result_2 = (Operator(circuit_2).data)@initial_state
+#         final_state_2 = initial_state.evolve(circuit_2)
+#         #result[id] = (np.abs(result_1.conj().T @ result_2))**2
+#         result[id] = state_fidelity(final_state_1, final_state_2)
+#         id += 1
+#     return result
 
 
-def sample_haar(dim, num_samples):
-    def get_F_from_cdf(p):
-        return 1 - (1 - p) ** (1 / (dim - 1))
-
-    cum_prob = np.random.uniform(0, 1, num_samples)
-    return np.vectorize(get_F_from_cdf)(cum_prob)
-
-def sample_pqc(num_samples, PQC):
+def sample_pqc_fidelities(num_samples, PQC):
     param_dim = PQC.num_parameters
     state_dim = 2 ** PQC.num_qubits
     thetamin = 0
     thetamax = 2 * np.pi
+
     params = np.random.uniform(thetamin, thetamax, (2 * num_samples, param_dim))
-    result = np.zeros(num_samples)
+
     id = 0
-    initial_state = np.zeros(state_dim)
-    initial_state[0] = 1
+
+    init_state = Statevector.from_label('0'*PQC.num_qubits)
+    final_states_1 = np.zeros(shape=(num_samples, state_dim), dtype=complex)
+    final_states_2 = np.zeros(shape=(num_samples, state_dim), dtype=complex)
+
     for i in range(0,len(params),2):
         circuit_1 = PQC.bind_parameters(params[i])
-        result_1 = (Operator(circuit_1).data)@initial_state
-        circuit_2 = PQC.bind_parameters(params[i+1])
-        result_2 = (Operator(circuit_2).data)@initial_state
-        result[id] = (np.abs(result_1.conj().T @ result_2))**2
+        circuit_2 = PQC.bind_parameters(params[i + 1])
+
+        final_states_1[id] = init_state.evolve(circuit_1).data
+        final_states_2[id] = init_state.evolve(circuit_2).data
         id += 1
-    return result
 
-def get_expressibility(PQC, num_samples: int, indices_len: int ):
+    fidelities = np.abs((final_states_1.conj() * final_states_2).sum(axis=1))**2
+    return fidelities
+
+def get_expressibility(PQC, num_samples: int, num_bins: int):
     state_dim = 2 ** PQC.num_qubits
-    indices = np.linspace(0,1,indices_len)
-    unit_indices = float(1/(indices_len**2))
-    PQC_indices = np.zeros(indices_len)
-    Haar_indices = np.zeros(indices_len)
+    PQC_samples = sample_pqc_fidelities(num_samples,PQC)
 
-    PQC_samples = sample_pqc(num_samples,PQC)
-    Haar_samples = sample_haar(state_dim,num_samples)
+    hist_PQC, bin_edges = np.histogram(a=PQC_samples,bins=num_bins,range=(0.,1.))
+    hist_PQC = hist_PQC / sum(hist_PQC)
 
-    for i in range(num_samples):
-        Haar_indices[int(Haar_samples[i]/indices[1])] += unit_indices
-        PQC_indices[int(PQC_samples[i]/indices[1])] += unit_indices
-    print(PQC_samples)
-    print(Haar_samples)
-    return kl_div(Haar_indices,PQC_indices)
+    terms = -(1-bin_edges)**(state_dim-1)
+    hist_haar = np.ediff1d(terms)
+    kl_div = scipy.stats.entropy(hist_PQC, hist_haar)
+
+    return kl_div
+
 if __name__ == '__main__':
-
-    # feature_map = FeatureMap('PauliFeatureMap', 4, 1)
+    # from embedding import qc_embedding
     #
-    # template = AnsatzTemplate()
-    # template.construct_simple_template(4, 1)
+    # num_qubits = 4
+    # MAX_OP_NODES = 20
     #
-    # model = QuantumNeuralNetwork(feature_map, template)
-    # model.visualize()
+    # encoding_length = (num_qubits + 1) * MAX_OP_NODES
+    # bounds = np.array([[-.2] * encoding_length, [1.0] * encoding_length])
+    # x = bounds[0] + (bounds[1] - bounds[0]) * np.random.rand(encoding_length)
+    # qc = qc_embedding.enc_to_qc(num_qubits=num_qubits, encoding=x)
 
-    print(model.num_qubits, model.input_dim, model.param_dim)
 
-    from embedding import qc_embedding
+    from qiskit import QuantumCircuit
+    from qiskit.circuit import ParameterVector
+    qc = QuantumCircuit(2)
+    theta = ParameterVector('theta',2)
+    qc.h(0)
+    qc.rz(theta[0],0)
+    qc.rx(theta[1],0)
 
-    num_qubits = 4
-    MAX_OP_NODES = 6
+    print(qc.draw())
+    expr = get_expressibility(qc, 5000, 75)
+    print(expr)
 
-    encoding_length = (num_qubits + 1) * MAX_OP_NODES
-    bounds = np.array([[-.2] * encoding_length, [1.0] * encoding_length])
-    x = bounds[0] + (bounds[1] - bounds[0]) * np.random.rand(encoding_length)
-    qc = qc_embedding.enc_to_qc(num_qubits=num_qubits, encoding=x)
 
-    qc.draw()
-    express = get_expressibility(qc,10000,75)
-    print(express)
+    # samples_list = [10000,20000,30000,40000,50000]
+    # expr_list = []
+    # for num_samples in samples_list:
+    #     expr = get_expressibility(qc,num_samples,75)
+    #     expr_list.append(expr)
+    #
+    # import matplotlib.pyplot as plt
+    # print(expr_list)
+    # plt.plot(samples_list, expr_list)
+    # plt.show()
