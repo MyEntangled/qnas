@@ -1,3 +1,4 @@
+import botorch.optim.fit
 import numpy as np
 import torch
 
@@ -23,7 +24,7 @@ from scipy.optimize import minimize
 
 from botorch import fit_gpytorch_model
 from botorch.acquisition.monte_carlo import qExpectedImprovement
-from botorch.acquisition.max_value_entropy_search import qMaxValueEntropy
+from botorch.acquisition.max_value_entropy_search import qMaxValueEntropy, qLowerBoundMaxValueEntropy
 
 from botorch.sampling.samplers import SobolQMCNormalSampler
 from botorch.exceptions import BadInitialCandidatesWarning
@@ -61,10 +62,10 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
 
         # register the raw parameter
         self.register_parameter(
-            name='raw_alpha', parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, 1))
+            name='raw_alpha', parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, 1), requires_grad=True)
         )
         self.register_parameter(
-            name='raw_alphanorm', parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, 1))
+            name='raw_alphanorm', parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, 1), requires_grad=True)
         )
 
         # for i in range(self.num_str_weights):
@@ -75,18 +76,16 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
         #         name='raw_betanorm_'+str(i), parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, 1, 1))
         #     )
         self.register_parameter(
-            name='raw_beta', parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, len(nu_list)))
+            name='raw_beta', parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, len(nu_list)), requires_grad=True)
         )
         self.register_parameter(
-            name='raw_betanorm', parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, len(nu_list)))
+            name='raw_betanorm', parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, len(nu_list)), requires_grad=True)
         )
 
         # set the parameter constraint to be positive, when nothing is specified
         if constraints is None:
             alpha_constraint = gpytorch.constraints.Positive()
             alphanorm_constraint = gpytorch.constraints.Positive()
-            #beta_constraints = [gpytorch.constraints.Positive()] * self.num_str_weights
-            #betanorm_constraints = [gpytorch.constraints.Positive()] * self.num_str_weights
             beta_constraints = gpytorch.constraints.Positive()
             betanorm_constraints = gpytorch.constraints.Positive()
         else:
@@ -168,7 +167,7 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
     def beta(self, value):
         return self._set_beta(value)
     @betanorm.setter
-    def beta(self, value):
+    def betanorm(self, value):
         return self._set_betanorm(value)
 
     def _set_alpha(self, value):
@@ -203,7 +202,7 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
         if not torch.is_tensor(value):
             value = torch.as_tensor(value).to(self.raw_betanorm)
         # when setting the paramater, transform the actual value to a raw one by applying the inverse transform
-        self.initialize(raw_beta=self.raw_betanorm_constraint.inverse_transform(value))
+        self.initialize(raw_betanorm=self.raw_betanorm_constraint.inverse_transform(value))
 
     # this is the kernel function
     def forward(self, x1, x2, **params):
@@ -426,13 +425,13 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
 
 
         #print(torch.mean(weighted_dist), torch.mean(weighted_distnorm_square))
-        K = self.alpha * torch.exp(-weighted_dist) #+ self.alphanorm * torch.exp(-weighted_distnorm_square)
+        K = self.alpha * torch.exp(-weighted_dist) + self.alphanorm * torch.exp(-weighted_distnorm_square)
 
-        print('covar module: ', x1.shape, x2.shape, K.shape, type(K))
+        #print('covar module: ', x1.shape, x2.shape, K.shape, type(K))
         #print('kernel: ', K)
 
-        return K
-        #return gpytorch.lazify(K)
+        #return K
+        return gpytorch.lazify(K)
 
     def circuit_distance(self, circ1, circ2, nas_cost=1, nu_list=[0.1]):
         return optimal_transport.circuit_distance_POT(PQC_1=circ1, PQC_2=circ2, nas_cost=nas_cost, nu_list=nu_list)
@@ -548,13 +547,37 @@ class QNN_BO():
 
 
         model = SingleTaskGP(train_x, train_obj, covar_module=covar_module, input_transform=input_transform).to(train_x)
-        print("NOISE LEVEL = ", model.likelihood.noise.item())
+
         mll = ExactMarginalLogLikelihood(model.likelihood, model)
         # load state dict if it is passed
         if state_dict is not None:
             model.load_state_dict(state_dict)
         return mll, model
 
+    def fit_gp_model(self, model, mll):
+        optimizer = torch.optim.SGD([{'params': model.parameters()}], lr=0.1)
+        NUM_EPOCHS = 150
+
+        mll.model.train()
+
+        for epoch in range(NUM_EPOCHS):
+            # clear gradients
+            optimizer.zero_grad()
+            # forward pass through the model to obtain the output MultivariateNormal
+            #print(model.train_inputs.shape, model.train_inputs)
+            output = model(model.train_inputs)
+            # Compute negative marginal log likelihood
+            loss = - mll(output, model.train_targets)
+            # back prop gradients
+            loss.backward()
+            # print every 10 iterations
+            if (epoch + 1) % 10 == 0:
+                print(
+                    f"Epoch {epoch + 1:>3}/{NUM_EPOCHS} - Loss: {loss.item():>4.3f} "
+                    f"noise: {model.likelihood.noise.item():>4.3f}"
+                )
+            optimizer.step()
+        return mll.model.eval()
 
     ## Zero-th order optimizer of acqf
     def cmaes_optimize_acqf(self, acq_func, bounds):
@@ -646,16 +669,121 @@ class QNN_BO():
 
         return new_x, train_obj
 
-    def update_random_observations(self, best_random):
+    def update_random_observations(self, best_random, num_random_points=1):
         """Simulates a random policy by taking a the current list of best values observed randomly,
         drawing a new random point, observing its value, and updating the list.
         """
         #rand_x = torch.rand(BATCH_SIZE, self.encoding_length)
-        rand_x = draw_sobol_samples(bounds=bounds, n=1, q=1).squeeze(1)
+        rand_x = draw_sobol_samples(bounds=bounds, n=num_random_points, q=1).squeeze(1)
         next_random_best = self.obj_func(X=rand_x)
         next_random_best = torch.as_tensor(next_random_best, device=self.device, dtype=self.dtype).max().item()
         best_random.append(max(best_random[-1], next_random_best))
         return best_random
+
+    def bayesopt_trial(self, model, mll, train_x, train_obj, best_observed=[], acqf_choice='qEI', candidate_set_size=10):
+        print('Choice of acquisition function: ', acqf_choice)
+
+        is_random_acqf = acqf_choice == 'random'
+        # run n_batch rounds of BayesOpt
+        for iteration in range(1, self.N_BATCH + 1):
+            print('iteration: ', iteration)
+
+            if acqf_choice == 'qEI':
+                qmc_sampler = SobolQMCNormalSampler(num_samples=self.MC_SAMPLES)
+                acqf = qExpectedImprovement(
+                    model=model,
+                    best_f=standardize(train_obj).max(),
+                    sampler=qmc_sampler
+                )
+            elif acqf_choice == 'qMES':
+                candidate_set = torch.rand(candidate_set_size, bounds.size(1), device=self.device, dtype=self.dtype)
+                candidate_set = bounds[0] + (bounds[1] - bounds[0]) * candidate_set
+                acqf = qMaxValueEntropy(
+                    model=model,
+                    candidate_set=candidate_set)
+
+            elif acqf_choice == 'GIBBON':
+                candidate_set = torch.rand(candidate_set_size, bounds.size(1), device=self.device, dtype=self.dtype)
+                candidate_set = bounds[0] + (bounds[1] - bounds[0]) * candidate_set
+                acqf = qLowerBoundMaxValueEntropy(model, candidate_set)
+
+
+            if is_random_acqf:
+                print('update random')
+                best_observed = self.update_random_observations(best_observed)
+
+            else: #optimize and get new observation
+
+
+                print('Model parameters BEFORE fitting:',  model.likelihood.noise, model.covar_module.alpha, model.covar_module.alphanorm, '\n',
+                      model.covar_module.beta,'\n', model.covar_module.betanorm)
+                for name, param in model.named_parameters():
+                    print(name, param)
+
+                fit_gpytorch_model(mll=mll, optimizer=botorch.optim.fit.fit_gpytorch_torch, max_retries=10)
+                #fit_gpytorch_model(mll=mll, max_retries=10)
+                #self.fit_gp_model(model=model, mll=mll)
+
+                print('Model parameters AFTER fitting:', model.likelihood.noise, model.covar_module.alpha, model.covar_module.alphanorm, '\n',
+                      model.covar_module.beta,'\n', model.covar_module.betanorm)
+                for name, param in model.named_parameters():
+                    print(name, param)
+
+                print('optimize acquisition function')
+                new_x, new_obj = self.optimize_acqf_and_get_observation(acq_func=acqf, bounds=bounds)
+                print("New candidates", new_obj.shape)
+
+                # update training points
+                train_x = torch.cat([train_x, new_x])
+                train_obj = torch.cat([train_obj, new_obj])
+
+                # update progress
+
+                print('update acqf best value')
+                best_value = train_obj.max().item()
+                best_observed.append(best_value)
+
+                print('end of batch: ', train_x.shape, train_obj.shape, best_observed)
+
+                # reinitialize the models so they are ready for fitting on next iteration
+                # use the current state dict to speed up fitting
+                mll, model = self.initialize_model(
+                    normalize(train_x, bounds=bounds),
+                    standardize(train_obj),
+                    state_dict=model.state_dict(),
+                )
+
+        return best_observed
+
+
+    def optimize_new(self, bounds, acqf_choices, num_init_points):
+        verbose = False
+
+        #best_observed_all_ei, best_observed_all_mes, best_random_all = [], [], []
+        list_of_best_observed_all = [[] for _ in range(len(acqf_choices))]
+
+        # average over multiple trials
+        for trial in range(1, self.N_TRIALS + 1):
+
+            print(f"\nTrial {trial:>2} of {self.N_TRIALS} ", end="")
+
+            # call helper functions to generate initial training data and initialize model
+            train_x_init, train_obj_init, best_observed_value_init = self.generate_initial_data(n=num_init_points)
+
+
+            print('data initialization: ', train_x_init.shape, train_obj_init.shape, best_observed_value_init)
+
+            # run n_batch rounds of BayesOpt after the initial random batch
+            for idx,choice in enumerate(acqf_choices):
+                mll, model = self.initialize_model(normalize(train_x_init, bounds=bounds), standardize(train_obj_init))
+                best_observed = self.bayesopt_trial(model, mll, train_x_init.clone(), train_obj_init.clone(),
+                                                                 best_observed=[best_observed_value_init],
+                                                                 acqf_choice=choice,candidate_set_size=50)
+                list_of_best_observed_all[idx].append(best_observed)
+
+        return list_of_best_observed_all
+
+
 
     def optimize(self, bounds, num_init_points):
         verbose = False
@@ -682,7 +810,7 @@ class QNN_BO():
             train_x_mes = train_x_init.clone()
             train_obj_mes = train_obj_init.clone()
 
-            print('data initialization: ', train_x_init.shape, train_obj_init.shape, best_observed_ei, best_observed_mes)
+            print('data initialization: ', train_x_init.shape, train_obj_init.shape, best_observed_ei)#, best_observed_mes)
 
             # run n_batch rounds of BayesOpt after the initial random batch
             for iteration in range(1, self.N_BATCH + 1):
@@ -690,16 +818,20 @@ class QNN_BO():
                 t0 = time.time()
 
                 # fit the models
-                #with gpytorch.settings.cholesky_jitter(10e-8):
-                #fit_gpytorch_model(mll_ei, fit_gpytorch_torch)
-                for name, param in model_ei.named_parameters():
-                    print(name, param)
-                model_ei.covar_module.alpha
+                # for name, param in model_ei.named_parameters():
+                #     print(name, param)
+                print('Model parameters BEFORE fitting:', model_ei.covar_module.alpha, model_ei.covar_module.alphanorm,
+                      model_ei.covar_module.beta, model_ei.covar_module.betanorm, model_ei.likelihood.noise)
 
                 print('fit the model')
-                #fit_gpytorch_model(mll_ei,nu_list=[0.1, 0.2, 0.4, 0.8])
-                fit_gpytorch_model(mll_ei, max_retries=10)
-                fit_gpytorch_model(mll_mes, max_retries=10)
+                #fit_gpytorch_model(mll=mll_ei, max_retries=10)
+                #fit_gpytorch_model(mll=mll_mes, max_retries=10)
+                fit_gpytorch_model(mll=mll_ei, optimizer=botorch.optim.fit.fit_gpytorch_torch, max_retries=10)
+                fit_gpytorch_model(mll=mll_mes, optimizer=botorch.optim.fit.fit_gpytorch_torch, max_retries=10)
+
+
+                print('Model parameters AFTER fitting:', model_ei.covar_module.alpha, model_ei.covar_module.alphanorm,
+                      model_ei.covar_module.beta, model_ei.covar_module.betanorm, model_ei.likelihood.noise)
                 # define the qEI and qNEI acquisition modules using a QMC sampler
                 qmc_sampler = SobolQMCNormalSampler(num_samples=self.MC_SAMPLES)
 
@@ -722,6 +854,7 @@ class QNN_BO():
                 new_x_ei, new_obj_ei = self.optimize_acqf_and_get_observation(acq_func=qEI, bounds=bounds)
                 new_x_mes, new_obj_mes = self.optimize_acqf_and_get_observation(acq_func=qMES, bounds=bounds)
                 print("New candidates", new_obj_ei.shape, new_obj_mes.shape)
+
 
                 # update training points
                 train_x_ei = torch.cat([train_x_ei, new_x_ei])
@@ -770,6 +903,7 @@ class QNN_BO():
             best_random_all.append(best_random)
 
         return best_observed_all_ei, best_observed_all_mes, best_random_all
+        #return best_observed_all_ei, best_random_all
 
 
     def plot(self, kwargs):
@@ -794,6 +928,7 @@ class QNN_BO():
         ax.set_ylim(bottom=0.)
         ax.set(xlabel='number of observations (beyond initial points)', ylabel='best objective value')
         ax.legend(loc="lower right")
+        plt.savefig('large_scale_test.png', bbox_inches='tight')
         plt.show()
 
 
@@ -807,15 +942,15 @@ if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dtype = torch.double
 
-    BATCH_SIZE = 5
-    num_qubits = 2
-    MAX_OP_NODES = 6
+    BATCH_SIZE = 10
+    num_qubits = 4
+    MAX_OP_NODES = 30
 
     encoding_length = (num_qubits + 1) * MAX_OP_NODES
     bounds = torch.tensor([[0.] * encoding_length, [1.0] * encoding_length], device=device, dtype=dtype)
 
     N_TRIALS = 1
-    N_BATCH = 10
+    N_BATCH = 50
     MC_SAMPLES = 2048
 
     qnnbo = QNN_BO(
@@ -827,8 +962,18 @@ if __name__ == '__main__':
         MC_SAMPLES = MC_SAMPLES
     )
 
-    best_observed_all_ei, best_observed_all_mes, best_random_all = qnnbo.optimize(bounds=bounds, num_init_points=30)
+    # best_observed_all_ei, best_observed_all_mes, best_random_all = qnnbo.optimize(bounds=bounds, num_init_points=5)
+    # #best_observed_all_ei, best_random_all = qnnbo.optimize(bounds=bounds, num_init_points=30)
+    #
+    # #qnnbo.plot(best_observed_all_ei, best_observed_all_nei, best_random_all)
+    # to_plot = {'qEI': best_observed_all_ei, 'qMES': best_observed_all_mes, 'random': best_random_all}
+    # #to_plot = {'qEI': best_observed_all_ei, 'random': best_random_all}
+    #
+    # qnnbo.plot(to_plot)
 
-    #qnnbo.plot(best_observed_all_ei, best_observed_all_nei, best_random_all)
-    to_plot = {'qEI': best_observed_all_ei, 'qMES': best_observed_all_mes, 'random': best_random_all}
+
+
+    acqf_choices = ['random', 'qEI', 'GIBBON']
+    list_of_best_observed_all = qnnbo.optimize_new(bounds=bounds,acqf_choices=acqf_choices,num_init_points=30)
+    to_plot = dict(zip(acqf_choices, list_of_best_observed_all))
     qnnbo.plot(to_plot)
