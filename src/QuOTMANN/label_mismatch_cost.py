@@ -12,15 +12,23 @@ from QuOTMANN.gate_info import SINGLE_QUBIT_DETERMINISTIC_GATES, \
     UNITARY
 
 import pickle
+import os
 
+#y_path = os.getcwd()
+#PATH_TO_SHAPE_DIST = os.path.join(my_path, '../gate_distance/all_shape_distances.pkl')
+#PATH_TO_CORE_DIST = os.path.join(my_path, '../gate_distance/all_core_distances.pkl')
 
 def label_mismatch_cost_matrix(PQC_1, PQC_2):
     assert PQC_1.num_qubits == PQC_2.num_qubits, "Two quantum circuits must have the same number of qubits."
     num_qubits_str = str(PQC_1.num_qubits)
 
     with open('src/gate_distance/all_shape_distances.pkl', 'rb') as f:
+    #with open('/Users/trongduong/Dropbox/URP project/Code/PQC_composer/src/gate_distance/all_shape_distances.pkl', 'rb') as f:
+    #with open(PATH_TO_SHAPE_DIST, 'rb') as f:
         all_shape_distances = pickle.load(f)
     with open('src/gate_distance/all_core_distances.pkl', 'rb') as f:
+    #with open('/Users/trongduong/Dropbox/URP project/Code/PQC_composer/src/gate_distance/all_core_distances.pkl', 'rb') as f:
+    #with open(PATH_TO_CORE_DIST, 'rb') as f:
         all_core_distances = pickle.load(f)
 
     dag_1, nx_dag_1, in_nodes_1, out_nodes_1 = create_dag(PQC_1)
