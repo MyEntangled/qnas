@@ -906,7 +906,7 @@ class QNN_BO():
         #return best_observed_all_ei, best_random_all
 
 
-    def plot(self, kwargs):
+    def plot(self, **kwargs):
         import numpy as np
         import matplotlib.pyplot as plt
         #plt.interactive(False)
@@ -942,7 +942,7 @@ if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dtype = torch.double
 
-    BATCH_SIZE = 10
+    BATCH_SIZE = 5
     num_qubits = 4
     MAX_OP_NODES = 30
 
@@ -950,7 +950,7 @@ if __name__ == '__main__':
     bounds = torch.tensor([[0.] * encoding_length, [1.0] * encoding_length], device=device, dtype=dtype)
 
     N_TRIALS = 1
-    N_BATCH = 50
+    N_BATCH = 10
     MC_SAMPLES = 2048
 
     qnnbo = QNN_BO(
@@ -974,6 +974,6 @@ if __name__ == '__main__':
 
 
     acqf_choices = ['random', 'qEI', 'GIBBON']
-    list_of_best_observed_all = qnnbo.optimize_new(bounds=bounds,acqf_choices=acqf_choices,num_init_points=30)
+    list_of_best_observed_all = qnnbo.optimize_new(bounds=bounds,acqf_choices=acqf_choices,num_init_points=5)
     to_plot = dict(zip(acqf_choices, list_of_best_observed_all))
     qnnbo.plot(to_plot)
