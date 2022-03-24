@@ -1,10 +1,14 @@
+<<<<<<< Updated upstream
 import botorch.optim.fit
+=======
+import cma
+>>>>>>> Stashed changes
 import numpy as np
 import torch
 
 from embedding import qc_embedding
 from QuOTMANN import optimal_transport, structural_cost
-from quantum_obj import get_QFT_states, maximize_QFT_fidelity
+from quantum_obj import get_QFT_states, maximize_QFT_fidelity,maximize_maxcut_fidelity
 
 import gpytorch
 
@@ -502,7 +506,7 @@ class QNN_BO():
 
     def latent_func(self,circuit):
         #f = circuit.num_parameters #/ self.MAX_OP_NODES
-        opt_param, opt_val = maximize_QFT_fidelity(PQC=circuit)
+        opt_param, opt_val = maximize_maxcut_fidelity(PQC=circuit)
         return torch.as_tensor(opt_val, device=self.device, dtype=self.dtype)
 
     def vec_to_circuit(self,vec):
@@ -943,8 +947,13 @@ if __name__ == '__main__':
     dtype = torch.double
 
     BATCH_SIZE = 5
+<<<<<<< Updated upstream
     num_qubits = 4
     MAX_OP_NODES = 30
+=======
+    num_qubits = 3
+    MAX_OP_NODES = 4
+>>>>>>> Stashed changes
 
     encoding_length = (num_qubits + 1) * MAX_OP_NODES
     bounds = torch.tensor([[0.] * encoding_length, [1.0] * encoding_length], device=device, dtype=dtype)
