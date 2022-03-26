@@ -191,7 +191,7 @@ class MAXCUT_objective():
             output_state = Statevector.from_label('0'*PQC.num_qubits).evolve(U)
 
             exp_vals = [output_state.expectation_value(H).real for H in hamiltonians]
-
+            #print(exp_vals, sum_opt_cut_val, np.real(-sum(exp_vals)) / sum_opt_cut_val)
             return np.real(-sum(exp_vals)) / sum_opt_cut_val
 
         if PQC.num_parameters > 0:
@@ -216,8 +216,10 @@ class MAXCUT_objective():
 
         max_prob = max(prob_dict.values())
         cuts = [key[::-1] for key,prob in prob_dict.items() if prob == max_prob]
+        #print(cuts)
         cuts_value = self.compute_cut_value(G,partitions=cuts)
-        return sum(cuts_value) / len(cuts_value)
+        #print(cuts_value)
+        return max(cuts_value)
 
     def all_maxcuts_stat(self, PQC, param, graphs=None):
         if graphs is None:
@@ -260,16 +262,31 @@ if __name__ == '__main__':
     print(qc.bind_parameters(opt_param).draw())
 
 
+    import matplotlib.pyplot as plt
 
     theta = ParameterVector('t',3)
     qc = QuantumCircuit(4)
     qc.h(0); qc.rx(theta[0],[0,1,2,3]); qc.cry(theta[1],1,2); qc.rzz(theta[2],2,3)
-    maxcut_obj = MAXCUT_objective(graphs=None,num_graphs=1,num_nodes=qc.num_qubits)
+
+    n = 4
+    V = np.arange(0, n, 1)
+    E = [(0, 1, 3.0), (0, 2, 5.0), (0, 3, 2.0), (1, 2, 5.0), (1, 3, 5.0), (2, 3, 2.0)]
+    G = nx.Graph()
+    G.add_nodes_from(V)
+    G.add_weighted_edges_from(E)
+
+    maxcut_obj = MAXCUT_objective(graphs=[G],num_graphs=1,num_nodes=qc.num_qubits)
     opt_param, opt_val = maxcut_obj.maximize_maxcut_hamiltonian(qc)
     sum_max_cut_val, sum_opt_cut_val = maxcut_obj.all_maxcuts_stat(qc, opt_param)
     print(opt_param, opt_val)
     print(sum_max_cut_val, ' / ', sum_opt_cut_val)
     print('Final circuit')
     print(qc.bind_parameters(opt_param).draw())
-
+    for G in maxcut_obj.graphs:
+        #pos = nx.get_node_attributes(G, 'pos')
+        pos = nx.spring_layout(G, k=4)
+        nx.draw(G, pos)
+        labels = nx.get_edge_attributes(G, 'weight')
+        nx.draw_networkx_edge_labels(G, pos, edge_labels=labels)
+        #plt.show()
 

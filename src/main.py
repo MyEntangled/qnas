@@ -4,7 +4,8 @@ import torch
 
 from embedding import qc_embedding
 from QuOTMANN import optimal_transport, structural_cost
-from quantum_obj import get_QFT_states, maximize_QFT_fidelity
+#from quantum_obj import get_QFT_states, maximize_QFT_fidelity
+from quantum_obj import QFT_objective, MAXCUT_objective
 
 import gpytorch
 
@@ -472,7 +473,13 @@ class GPModel(ExactGP, GPyTorchModel):
 
 
 class QNN_BO():
-    def __init__(self, num_qubits, MAX_OP_NODES, N_TRIALS, N_BATCH, BATCH_SIZE, MC_SAMPLES, device=None, dtype=None):
+    def __init__(self, objective_type, num_qubits, MAX_OP_NODES, N_TRIALS, N_BATCH, BATCH_SIZE, MC_SAMPLES, device=None, dtype=None):
+        self.objective_type = objective_type
+        if self.objective_type == 'qft':
+            self.objective = QFT_objective(num_qubits=num_qubits)
+        elif self.objective_type == 'maxcut':
+            self.objective = MAXCUT_objective(num_graphs=10,num_nodes=num_qubits)
+
         self.num_qubits = num_qubits
         self.MAX_OP_NODES = MAX_OP_NODES
         self.encoding_length = (self.num_qubits + 1) * self.MAX_OP_NODES
@@ -501,8 +508,10 @@ class QNN_BO():
         return latent_func_values
 
     def latent_func(self,circuit):
-        #f = circuit.num_parameters #/ self.MAX_OP_NODES
-        opt_param, opt_val = maximize_QFT_fidelity(PQC=circuit)
+        if self.objective_type == 'qft':
+            opt_param, opt_val = self.objective.maximize_QFT_fidelity(PQC=circuit)
+        elif self.objective_type == 'maxcut':
+            opt_param, opt_val = self.objective.maximize_maxcut_hamiltonian(PQC=circuit)
         return torch.as_tensor(opt_val, device=self.device, dtype=self.dtype)
 
     def vec_to_circuit(self,vec):
@@ -925,7 +934,7 @@ class QNN_BO():
             print(label, y.mean(axis=0))
 
 
-        plt.plot([0, self.N_BATCH * self.BATCH_SIZE], [1] * 2, 'k', label="true best bjective", linewidth=2)
+        plt.plot([0, self.N_BATCH * self.BATCH_SIZE], [1] * 2, 'k', label="true best objective", linewidth=2)
         ax.set_ylim(bottom=0.)
         ax.set(xlabel='number of observations (beyond initial points)', ylabel='best objective value')
         ax.legend(loc="lower right")
@@ -945,7 +954,7 @@ if __name__ == '__main__':
 
     BATCH_SIZE = 10
     num_qubits = 4
-    MAX_OP_NODES = 40
+    MAX_OP_NODES = 20
 
     encoding_length = (num_qubits + 1) * MAX_OP_NODES
     bounds = torch.tensor([[0.] * encoding_length, [1.0] * encoding_length], device=device, dtype=dtype)
@@ -955,6 +964,7 @@ if __name__ == '__main__':
     MC_SAMPLES = 2048
 
     qnnbo = QNN_BO(
+        objective_type = 'qft',
         num_qubits = num_qubits,
         MAX_OP_NODES = MAX_OP_NODES,
         N_TRIALS = N_TRIALS,
@@ -975,10 +985,10 @@ if __name__ == '__main__':
 
 
     acqf_choices = ['random', 'qEI', 'UCB', 'GIBBON']
-    num_init_points = 30
+    num_init_points = 10
     list_of_best_observed_all = qnnbo.optimize_new(bounds=bounds,acqf_choices=acqf_choices,num_init_points=num_init_points)
     to_plot = dict(zip(acqf_choices, list_of_best_observed_all))
 
-    imgname = '_'.join([str(num_qubits), str(MAX_OP_NODES), str(num_init_points), str(BATCH_SIZE), str(N_BATCH), str(N_TRIALS), *acqf_choices])
+    imgname = '_'.join([qnnbo.objective_type, str(num_qubits), str(MAX_OP_NODES), str(num_init_points), str(BATCH_SIZE), str(N_BATCH), str(N_TRIALS), *acqf_choices])
     filename = './output/' + imgname
     qnnbo.plot(to_plot, filename)
