@@ -58,13 +58,27 @@ for gate in ADMISSIBLE_GATES:
 
 def create_op_node_dict():
     OP_NODE_DICT = {}
+    num_det_ops = len(SINGLE_QUBIT_DETERMINISTIC_GATES) + len(TWO_QUBIT_DETERMINISTIC_GATES)
+    num_var_ops = len(SINGLE_QUBIT_VARIATIONAL_GATES) + len(TWO_QUBIT_VARIATIONAL_GATES)
     num_ops = len(ADMISSIBLE_GATES)
 
-    #print(np.linspace(-1,1, 2*num_ops+1)[1::2])
-    #op_scalars = np.arctanh(np.linspace(0,1, 2*num_ops+1)[1::2])
-    op_scalars = np.linspace(0,1, 2*num_ops+1)[1::2]
+    #op_scalars = np.linspace(0,1, 2*num_ops+1)[1::2]
+    det_op_scalars = np.linspace(0.,0.1, 2*num_det_ops)[1::2]
+    var_op_scalars = np.linspace(0.1,1., 2*num_var_ops)[1::2]
+
+
+    # for i, gate in enumerate(ADMISSIBLE_GATES):
+    #     OP_NODE_DICT[gate] = op_scalars[i]
+
+    idx_det = 0
+    idx_var = 0
     for i, gate in enumerate(ADMISSIBLE_GATES):
-        OP_NODE_DICT[gate] = op_scalars[i]
+        if gate in SINGLE_QUBIT_DETERMINISTIC_GATES or gate in TWO_QUBIT_DETERMINISTIC_GATES:
+            OP_NODE_DICT[gate] = det_op_scalars[idx_det]
+            idx_det += 1
+        else:
+            OP_NODE_DICT[gate] = var_op_scalars[idx_var]
+            idx_var += 1
 
     return OP_NODE_DICT
 OP_NODE_DICT = create_op_node_dict()

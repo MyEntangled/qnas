@@ -23,8 +23,8 @@ from botorch.optim import optimize_acqf
 from scipy.optimize import minimize
 
 from botorch import fit_gpytorch_model
-from botorch.acquisition.monte_carlo import qExpectedImprovement
-from botorch.acquisition.max_value_entropy_search import qMaxValueEntropy, qLowerBoundMaxValueEntropy
+from botorch.acquisition.monte_carlo import qExpectedImprovement, qUpperConfidenceBound
+from botorch.acquisition.max_value_entropy_search import qLowerBoundMaxValueEntropy
 
 from botorch.sampling.samplers import SobolQMCNormalSampler
 from botorch.exceptions import BadInitialCandidatesWarning
@@ -205,7 +205,7 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
         self.initialize(raw_betanorm=self.raw_betanorm_constraint.inverse_transform(value))
 
     # this is the kernel function
-    def forward(self, x1, x2, **params):
+    def forward(self, x1, x2, diag=False, **params):
         # # calculate the distance between inputs
 
         if len(x1.shape) == 4: ## (n_batchs, q, n_samples, n_features)
@@ -423,15 +423,15 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
                     weighted_dist[i,j] = torch.inner(self.beta, torch.tensor(all_dist).to(self.beta))
                     weighted_distnorm_square[i,j] = torch.inner(self.betanorm, torch.tensor(all_distnorm).to(self.betanorm)**2)
 
-
         #print(torch.mean(weighted_dist), torch.mean(weighted_distnorm_square))
         K = self.alpha * torch.exp(-weighted_dist) + self.alphanorm * torch.exp(-weighted_distnorm_square)
+        if diag:
+            K = torch.diagonal(K, dim1=-2, dim2=-1)
 
-        #print('covar module: ', x1.shape, x2.shape, K.shape, type(K))
-        #print('kernel: ', K)
+        print('covar module: ', x1.shape, x2.shape, K.shape, type(K))
 
-        #return K
-        return gpytorch.lazify(K)
+        return K
+        #return gpytorch.lazify(K)
 
     def circuit_distance(self, circ1, circ2, nas_cost=1, nu_list=[0.1]):
         return optimal_transport.circuit_distance_POT(PQC_1=circ1, PQC_2=circ2, nas_cost=nas_cost, nu_list=nu_list)
@@ -695,12 +695,13 @@ class QNN_BO():
                     best_f=standardize(train_obj).max(),
                     sampler=qmc_sampler
                 )
-            elif acqf_choice == 'qMES':
-                candidate_set = torch.rand(candidate_set_size, bounds.size(1), device=self.device, dtype=self.dtype)
-                candidate_set = bounds[0] + (bounds[1] - bounds[0]) * candidate_set
-                acqf = qMaxValueEntropy(
+            elif acqf_choice == 'UCB':
+                qmc_sampler = SobolQMCNormalSampler(num_samples=self.MC_SAMPLES)
+                acqf = qUpperConfidenceBound(
                     model=model,
-                    candidate_set=candidate_set)
+                    beta=0.1,
+                    sampler=qmc_sampler
+                )
 
             elif acqf_choice == 'GIBBON':
                 candidate_set = torch.rand(candidate_set_size, bounds.size(1), device=self.device, dtype=self.dtype)
@@ -906,7 +907,7 @@ class QNN_BO():
         #return best_observed_all_ei, best_random_all
 
 
-    def plot(self, **kwargs):
+    def plot(self, to_plot, filename):
         import numpy as np
         import matplotlib.pyplot as plt
         #plt.interactive(False)
@@ -918,7 +919,7 @@ class QNN_BO():
         iters = np.arange(self.N_BATCH + 1) * self.BATCH_SIZE
 
         fig, ax = plt.subplots(1, 1, figsize=(8, 6))
-        for label, best_observed_all in kwargs.items():
+        for label, best_observed_all in to_plot.items():
             y = np.asarray(best_observed_all)
             ax.errorbar(iters, y.mean(axis=0), yerr=ci(y), label=label, linewidth=1.5)
             print(label, y.mean(axis=0))
@@ -928,7 +929,7 @@ class QNN_BO():
         ax.set_ylim(bottom=0.)
         ax.set(xlabel='number of observations (beyond initial points)', ylabel='best objective value')
         ax.legend(loc="lower right")
-        plt.savefig('large_scale_test.png', bbox_inches='tight')
+        plt.savefig(filename, bbox_inches='tight')
         plt.show()
 
 
@@ -942,15 +943,15 @@ if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dtype = torch.double
 
-    BATCH_SIZE = 5
+    BATCH_SIZE = 10
     num_qubits = 4
-    MAX_OP_NODES = 30
+    MAX_OP_NODES = 40
 
     encoding_length = (num_qubits + 1) * MAX_OP_NODES
     bounds = torch.tensor([[0.] * encoding_length, [1.0] * encoding_length], device=device, dtype=dtype)
 
     N_TRIALS = 1
-    N_BATCH = 10
+    N_BATCH = 25
     MC_SAMPLES = 2048
 
     qnnbo = QNN_BO(
@@ -973,7 +974,11 @@ if __name__ == '__main__':
 
 
 
-    acqf_choices = ['random', 'qEI', 'GIBBON']
-    list_of_best_observed_all = qnnbo.optimize_new(bounds=bounds,acqf_choices=acqf_choices,num_init_points=5)
+    acqf_choices = ['random', 'qEI', 'UCB', 'GIBBON']
+    num_init_points = 30
+    list_of_best_observed_all = qnnbo.optimize_new(bounds=bounds,acqf_choices=acqf_choices,num_init_points=num_init_points)
     to_plot = dict(zip(acqf_choices, list_of_best_observed_all))
-    qnnbo.plot(to_plot)
+
+    imgname = '_'.join([str(num_qubits), str(MAX_OP_NODES), str(num_init_points), str(BATCH_SIZE), str(N_BATCH), str(N_TRIALS), *acqf_choices])
+    filename = './output/' + imgname
+    qnnbo.plot(to_plot, filename)
