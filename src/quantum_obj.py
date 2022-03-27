@@ -26,7 +26,7 @@ class QFT_objective():
             self.input_states = input_states
 
         self.outcome_states = self.get_QFT_states(num_qubits=self.num_qubits, input_states=self.input_states)
-
+        print(self.outcome_states[:4])
 
     def get_QFT_states(self, num_qubits, input_states):
         qft_circ = QFT(num_qubits=num_qubits, approximation_degree=0, do_swaps=False, inverse=False, insert_barriers=False,name=None)
@@ -65,6 +65,8 @@ class QFT_objective():
             initial_guess = np.random.rand(PQC.num_parameters)
             result = minimize(fidelity_obj, initial_guess)
 
+            U = Operator(PQC.bind_parameters(result.x))
+            print([state.evolve(U) for state in input_states][:4])
             return result.x, -result.fun
         else:
             return [], -fidelity_obj([])
@@ -168,7 +170,8 @@ class MAXCUT_objective():
             op = Operator(qc)
             matrix = op.data
             H_c += 1/2*G.edges[edge]['weight']*(np.eye(2**n)-matrix)
-        return Operator(H_c)
+        #return Operator(H_c)
+        return H_c
 
     def maximize_maxcut_hamiltonian(self, PQC, graphs:list=None, hamiltonians:list=None, opt_cut_vals:list=None):
         graphs = graphs or self.graphs
@@ -182,20 +185,20 @@ class MAXCUT_objective():
         assert len(graphs) == len(hamiltonians) and len(graphs) == len(opt_cut_vals)
 
         def obj_func(x):
-            # qc = PQC.bind_parameters(x)
-            # psi = CircuitStateFn(qc)
-            # expectation_value = sum( [(~psi @ H @ psi).eval().real for H in hamiltonians] )
-            # return np.real(-expectation_value) / sum_opt_cut_val
+            qc = PQC.bind_parameters(x)
+            psi = CircuitStateFn(qc).to_matrix()
+            expectation_value = sum( [(psi.conj().T @ H @ psi) for H in hamiltonians] )
+            return np.real(-expectation_value) / sum_opt_cut_val
 
-            U = Operator(PQC.bind_parameters(x))
-            output_state = Statevector.from_label('0'*PQC.num_qubits).evolve(U)
-
-            exp_vals = [output_state.expectation_value(H).real for H in hamiltonians]
-            #print(exp_vals, sum_opt_cut_val, np.real(-sum(exp_vals)) / sum_opt_cut_val)
-            return np.real(-sum(exp_vals)) / sum_opt_cut_val
+            # U = Operator(PQC.bind_parameters(x))
+            # output_state = Statevector.from_label('0'*PQC.num_qubits).evolve(U)
+            #
+            # exp_vals = [output_state.expectation_value(H).real for H in hamiltonians]
+            # #print(exp_vals, sum_opt_cut_val, np.real(-sum(exp_vals)) / sum_opt_cut_val)
+            # return np.real(-sum(exp_vals)) / sum_opt_cut_val
 
         if PQC.num_parameters > 0:
-            initial_guess = np.random.rand(PQC.num_parameters)
+            initial_guess = np.random.uniform(0,2*np.pi,PQC.num_parameters)
             result = minimize(obj_func, initial_guess)
             return result.x, -result.fun
         else:
@@ -242,20 +245,35 @@ if __name__ == '__main__':
     from qiskit import QuantumCircuit
     from qiskit.circuit import ParameterVector
 
-    theta = ParameterVector('t',3)
+    # theta = ParameterVector('t',3)
+    # qc = QuantumCircuit(4)
+    # qc.h(0); qc.rx(theta[0],0); qc.cry(theta[1],1,2); qc.rzz(theta[2],2,3)
+    # qft_obj = QFT_objective(num_qubits=4)
+    # opt_param, opt_val = qft_obj.maximize_QFT_fidelity(qc)
+    # print(opt_param, opt_val)
+    # print('Final circuit')
+    # print(qc.bind_parameters(opt_param).draw())
+    #
+    #
+    # qc = QuantumCircuit(2)
+    # qc.h(0)
+    # qc.crx(0.2,0,1)
+    # qft_obj = QFT_objective(num_qubits=2)
+    # opt_param, opt_val = qft_obj.maximize_QFT_fidelity(qc)
+    # print(opt_param, opt_val)
+    # print('Final circuit')
+    # print(qc.bind_parameters(opt_param).draw())
+
     qc = QuantumCircuit(4)
-    qc.h(0); qc.rx(theta[0],0); qc.cry(theta[1],1,2); qc.rzz(theta[2],2,3)
-    qft_obj = QFT_objective(num_qubits=4)
-    opt_param, opt_val = qft_obj.maximize_QFT_fidelity(qc)
-    print(opt_param, opt_val)
-    print('Final circuit')
-    print(qc.bind_parameters(opt_param).draw())
-
-
-    qc = QuantumCircuit(2)
+    theta = ParameterVector('t', 6)
+    qc.h(3)
+    qc.crz(theta[0],2,3); qc.crz(theta[1],1,3); qc.crz(theta[2],0,3);
+    qc.h(2)
+    qc.crz(theta[3], 1, 2); qc.crz(theta[4],0,2);
+    qc.h(1)
+    qc.crz(theta[5], 0, 1);
     qc.h(0)
-    qc.crx(0.2,0,1)
-    qft_obj = QFT_objective(num_qubits=2)
+    qft_obj = QFT_objective(num_qubits=4)
     opt_param, opt_val = qft_obj.maximize_QFT_fidelity(qc)
     print(opt_param, opt_val)
     print('Final circuit')

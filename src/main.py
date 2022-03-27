@@ -795,125 +795,125 @@ class QNN_BO():
 
 
 
-    def optimize(self, bounds, num_init_points):
-        verbose = False
-
-        best_observed_all_ei, best_observed_all_mes, best_random_all = [], [], []
-
-        # average over multiple trials
-        for trial in range(1, self.N_TRIALS + 1):
-
-            print(f"\nTrial {trial:>2} of {self.N_TRIALS} ", end="")
-            best_observed_ei, best_observed_mes, best_random = [], [], []
-
-            # call helper functions to generate initial training data and initialize model
-            train_x_init, train_obj_init, best_observed_value_init = self.generate_initial_data(n=num_init_points)
-            mll_ei, model_ei = self.initialize_model(normalize(train_x_init, bounds=bounds), standardize(train_obj_init))
-            mll_mes, model_mes = self.initialize_model(normalize(train_x_init, bounds=bounds), standardize(train_obj_init))
-
-            best_observed_ei.append(best_observed_value_init)
-            best_observed_mes.append(best_observed_value_init)
-            best_random.append(best_observed_value_init)
-
-            train_x_ei = train_x_init.clone()
-            train_obj_ei = train_obj_init.clone()
-            train_x_mes = train_x_init.clone()
-            train_obj_mes = train_obj_init.clone()
-
-            print('data initialization: ', train_x_init.shape, train_obj_init.shape, best_observed_ei)#, best_observed_mes)
-
-            # run n_batch rounds of BayesOpt after the initial random batch
-            for iteration in range(1, self.N_BATCH + 1):
-                print('iteration: ', iteration)
-                t0 = time.time()
-
-                # fit the models
-                # for name, param in model_ei.named_parameters():
-                #     print(name, param)
-                print('Model parameters BEFORE fitting:', model_ei.covar_module.alpha, model_ei.covar_module.alphanorm,
-                      model_ei.covar_module.beta, model_ei.covar_module.betanorm, model_ei.likelihood.noise)
-
-                print('fit the model')
-                #fit_gpytorch_model(mll=mll_ei, max_retries=10)
-                #fit_gpytorch_model(mll=mll_mes, max_retries=10)
-                fit_gpytorch_model(mll=mll_ei, optimizer=botorch.optim.fit.fit_gpytorch_torch, max_retries=10)
-                fit_gpytorch_model(mll=mll_mes, optimizer=botorch.optim.fit.fit_gpytorch_torch, max_retries=10)
-
-
-                print('Model parameters AFTER fitting:', model_ei.covar_module.alpha, model_ei.covar_module.alphanorm,
-                      model_ei.covar_module.beta, model_ei.covar_module.betanorm, model_ei.likelihood.noise)
-                # define the qEI and qNEI acquisition modules using a QMC sampler
-                qmc_sampler = SobolQMCNormalSampler(num_samples=self.MC_SAMPLES)
-
-                # for best_f, we use the best observed noisy values as an approximation
-                qEI = qExpectedImprovement(
-                    model=model_ei,
-                    best_f=standardize(train_obj_ei).max(),
-                    sampler=qmc_sampler
-                )
-
-                candidate_set = torch.rand(25, bounds.size(1), device=self.device, dtype=self.dtype)
-                candidate_set = bounds[0] + (bounds[1] - bounds[0]) * candidate_set
-
-                qMES = qMaxValueEntropy(
-                    model=model_ei,
-                    candidate_set=candidate_set)
-
-                print('optimize acquisition function')
-                # optimize and get new observation
-                new_x_ei, new_obj_ei = self.optimize_acqf_and_get_observation(acq_func=qEI, bounds=bounds)
-                new_x_mes, new_obj_mes = self.optimize_acqf_and_get_observation(acq_func=qMES, bounds=bounds)
-                print("New candidates", new_obj_ei.shape, new_obj_mes.shape)
-
-
-                # update training points
-                train_x_ei = torch.cat([train_x_ei, new_x_ei])
-                train_obj_ei = torch.cat([train_obj_ei, new_obj_ei])
-
-                train_x_mes = torch.cat([train_x_mes, new_x_mes])
-                train_obj_mes = torch.cat([train_obj_mes, new_obj_mes])
-
-                # update progress
-                print('update random')
-                best_random = self.update_random_observations(best_random)
-                print('update qEI best value')
-                best_value_ei = train_obj_ei.max().item()
-                best_observed_ei.append(best_value_ei)
-                print('update qMES best value')
-                best_value_mes = train_obj_mes.max().item()
-                best_observed_mes.append(best_value_mes)
-
-                print('end of batch: ', train_x_ei.shape, train_obj_ei.shape, best_observed_ei, best_observed_mes)
-
-                # reinitialize the models so they are ready for fitting on next iteration
-                # use the current state dict to speed up fitting
-                mll_ei, model_ei = self.initialize_model(
-                    normalize(train_x_ei, bounds=bounds),
-                    standardize(train_obj_ei),
-                    state_dict=model_ei.state_dict(),
-                )
-                mll_mes, model_mes = self.initialize_model(
-                    normalize(train_x_mes, bounds=bounds),
-                    standardize(train_obj_mes),
-                    state_dict=model_mes.state_dict(),
-                )
-                t1 = time.time()
-
-                if verbose:
-                    print(
-                        f"\nBatch {iteration:>2}: best_value (random, qEI) = "
-                        f"({max(best_random):>4.2f}, {best_value_ei:>4.2f}), "
-                        f"time = {t1 - t0:>4.2f}.", end=""
-                    )
-                else:
-                    print(".", end="")
-
-            best_observed_all_ei.append(best_observed_ei)
-            best_observed_all_mes.append(best_observed_mes)
-            best_random_all.append(best_random)
-
-        return best_observed_all_ei, best_observed_all_mes, best_random_all
-        #return best_observed_all_ei, best_random_all
+    # def optimize(self, bounds, num_init_points):
+    #     verbose = False
+    #
+    #     best_observed_all_ei, best_observed_all_mes, best_random_all = [], [], []
+    #
+    #     # average over multiple trials
+    #     for trial in range(1, self.N_TRIALS + 1):
+    #
+    #         print(f"\nTrial {trial:>2} of {self.N_TRIALS} ", end="")
+    #         best_observed_ei, best_observed_mes, best_random = [], [], []
+    #
+    #         # call helper functions to generate initial training data and initialize model
+    #         train_x_init, train_obj_init, best_observed_value_init = self.generate_initial_data(n=num_init_points)
+    #         mll_ei, model_ei = self.initialize_model(normalize(train_x_init, bounds=bounds), standardize(train_obj_init))
+    #         mll_mes, model_mes = self.initialize_model(normalize(train_x_init, bounds=bounds), standardize(train_obj_init))
+    #
+    #         best_observed_ei.append(best_observed_value_init)
+    #         best_observed_mes.append(best_observed_value_init)
+    #         best_random.append(best_observed_value_init)
+    #
+    #         train_x_ei = train_x_init.clone()
+    #         train_obj_ei = train_obj_init.clone()
+    #         train_x_mes = train_x_init.clone()
+    #         train_obj_mes = train_obj_init.clone()
+    #
+    #         print('data initialization: ', train_x_init.shape, train_obj_init.shape, best_observed_ei)#, best_observed_mes)
+    #
+    #         # run n_batch rounds of BayesOpt after the initial random batch
+    #         for iteration in range(1, self.N_BATCH + 1):
+    #             print('iteration: ', iteration)
+    #             t0 = time.time()
+    #
+    #             # fit the models
+    #             # for name, param in model_ei.named_parameters():
+    #             #     print(name, param)
+    #             print('Model parameters BEFORE fitting:', model_ei.covar_module.alpha, model_ei.covar_module.alphanorm,
+    #                   model_ei.covar_module.beta, model_ei.covar_module.betanorm, model_ei.likelihood.noise)
+    #
+    #             print('fit the model')
+    #             #fit_gpytorch_model(mll=mll_ei, max_retries=10)
+    #             #fit_gpytorch_model(mll=mll_mes, max_retries=10)
+    #             fit_gpytorch_model(mll=mll_ei, optimizer=botorch.optim.fit.fit_gpytorch_torch, max_retries=10)
+    #             fit_gpytorch_model(mll=mll_mes, optimizer=botorch.optim.fit.fit_gpytorch_torch, max_retries=10)
+    #
+    #
+    #             print('Model parameters AFTER fitting:', model_ei.covar_module.alpha, model_ei.covar_module.alphanorm,
+    #                   model_ei.covar_module.beta, model_ei.covar_module.betanorm, model_ei.likelihood.noise)
+    #             # define the qEI and qNEI acquisition modules using a QMC sampler
+    #             qmc_sampler = SobolQMCNormalSampler(num_samples=self.MC_SAMPLES)
+    #
+    #             # for best_f, we use the best observed noisy values as an approximation
+    #             qEI = qExpectedImprovement(
+    #                 model=model_ei,
+    #                 best_f=standardize(train_obj_ei).max(),
+    #                 sampler=qmc_sampler
+    #             )
+    #
+    #             candidate_set = torch.rand(25, bounds.size(1), device=self.device, dtype=self.dtype)
+    #             candidate_set = bounds[0] + (bounds[1] - bounds[0]) * candidate_set
+    #
+    #             qMES = qMaxValueEntropy(
+    #                 model=model_ei,
+    #                 candidate_set=candidate_set)
+    #
+    #             print('optimize acquisition function')
+    #             # optimize and get new observation
+    #             new_x_ei, new_obj_ei = self.optimize_acqf_and_get_observation(acq_func=qEI, bounds=bounds)
+    #             new_x_mes, new_obj_mes = self.optimize_acqf_and_get_observation(acq_func=qMES, bounds=bounds)
+    #             print("New candidates", new_obj_ei.shape, new_obj_mes.shape)
+    #
+    #
+    #             # update training points
+    #             train_x_ei = torch.cat([train_x_ei, new_x_ei])
+    #             train_obj_ei = torch.cat([train_obj_ei, new_obj_ei])
+    #
+    #             train_x_mes = torch.cat([train_x_mes, new_x_mes])
+    #             train_obj_mes = torch.cat([train_obj_mes, new_obj_mes])
+    #
+    #             # update progress
+    #             print('update random')
+    #             best_random = self.update_random_observations(best_random)
+    #             print('update qEI best value')
+    #             best_value_ei = train_obj_ei.max().item()
+    #             best_observed_ei.append(best_value_ei)
+    #             print('update qMES best value')
+    #             best_value_mes = train_obj_mes.max().item()
+    #             best_observed_mes.append(best_value_mes)
+    #
+    #             print('end of batch: ', train_x_ei.shape, train_obj_ei.shape, best_observed_ei, best_observed_mes)
+    #
+    #             # reinitialize the models so they are ready for fitting on next iteration
+    #             # use the current state dict to speed up fitting
+    #             mll_ei, model_ei = self.initialize_model(
+    #                 normalize(train_x_ei, bounds=bounds),
+    #                 standardize(train_obj_ei),
+    #                 state_dict=model_ei.state_dict(),
+    #             )
+    #             mll_mes, model_mes = self.initialize_model(
+    #                 normalize(train_x_mes, bounds=bounds),
+    #                 standardize(train_obj_mes),
+    #                 state_dict=model_mes.state_dict(),
+    #             )
+    #             t1 = time.time()
+    #
+    #             if verbose:
+    #                 print(
+    #                     f"\nBatch {iteration:>2}: best_value (random, qEI) = "
+    #                     f"({max(best_random):>4.2f}, {best_value_ei:>4.2f}), "
+    #                     f"time = {t1 - t0:>4.2f}.", end=""
+    #                 )
+    #             else:
+    #                 print(".", end="")
+    #
+    #         best_observed_all_ei.append(best_observed_ei)
+    #         best_observed_all_mes.append(best_observed_mes)
+    #         best_random_all.append(best_random)
+    #
+    #     return best_observed_all_ei, best_observed_all_mes, best_random_all
+    #     #return best_observed_all_ei, best_random_all
 
 
     def plot(self, to_plot, filename):
