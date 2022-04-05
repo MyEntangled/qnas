@@ -26,7 +26,7 @@ class QFT_objective():
             self.input_states = input_states
 
         self.outcome_states = self.get_QFT_states(num_qubits=self.num_qubits, input_states=self.input_states)
-        print(self.outcome_states[:4])
+        #print(self.outcome_states[:4])
 
     def get_QFT_states(self, num_qubits, input_states):
         qft_circ = QFT(num_qubits=num_qubits, approximation_degree=0, do_swaps=False, inverse=False, insert_barriers=False,name=None)
@@ -66,7 +66,7 @@ class QFT_objective():
             result = minimize(fidelity_obj, initial_guess)
 
             U = Operator(PQC.bind_parameters(result.x))
-            print([state.evolve(U) for state in input_states][:4])
+            #print([state.evolve(U) for state in input_states][:4])
             return result.x, -result.fun
         else:
             return [], -fidelity_obj([])

@@ -4,7 +4,6 @@ import torch
 
 from embedding import qc_embedding
 from QuOTMANN import optimal_transport, structural_cost
-#from quantum_obj import get_QFT_states, maximize_QFT_fidelity
 from quantum_obj import QFT_objective, MAXCUT_objective
 
 import gpytorch
@@ -20,11 +19,11 @@ from gpytorch.likelihoods import GaussianLikelihood
 
 from botorch.optim import optimize_acqf
 
-#import cma
 from scipy.optimize import minimize
 
 from botorch import fit_gpytorch_model
 from botorch.acquisition.monte_carlo import qExpectedImprovement, qUpperConfidenceBound
+from botorch.acquisition import ExpectedImprovement, UpperConfidenceBound
 from botorch.acquisition.max_value_entropy_search import qLowerBoundMaxValueEntropy
 
 from botorch.sampling.samplers import SobolQMCNormalSampler
@@ -37,11 +36,8 @@ warnings.filterwarnings('ignore', category=RuntimeWarning)
 from botorch.utils.transforms import standardize, normalize, unnormalize
 from botorch.utils.sampling import draw_sobol_samples
 
-
-#### Save resources when computing covariance kernel by reusing previous kernel (of smaller size)
-#### Find a way to explain why all beta[i] = 0
-#https://github.com/kirthevasank/nasbot/blob/3c745dc986be30e3721087c8fa768099032a0802/nn/nn_gp.py#L120
-#https://github.com/kirthevasank/nasbot/blob/3c745dc986be30e3721087c8fa768099032a0802/nn/unittest_nn_gp.py#L56
+import matplotlib.pyplot as plt
+from matplotlib import ticker
 
 class CircuitDistKernel(gpytorch.kernels.Kernel):
 
@@ -429,32 +425,13 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
         if diag:
             K = torch.diagonal(K, dim1=-2, dim2=-1)
 
-        print('covar module: ', x1.shape, x2.shape, K.shape, type(K))
+        #print('covar module: ', x1.shape, x2.shape, K.shape, type(K))
 
         return K
         #return gpytorch.lazify(K)
 
     def circuit_distance(self, circ1, circ2, nas_cost=1, nu_list=[0.1]):
         return optimal_transport.circuit_distance_POT(PQC_1=circ1, PQC_2=circ2, nas_cost=nas_cost, nu_list=nu_list)
-
-class FirstSincKernel(gpytorch.kernels.Kernel):
-    # the sinc kernel is stationary
-    has_lengthscale = False
-
-    # this is the kernel function
-    def forward(self, x1, x2, **params):
-        # calculate the distance between inputs
-        #x1 = x1.div(self.lengthscale)
-        #x2 = x2.div(self.lengthscale)
-        diff = self.covar_dist(x1, x2, **params)
-        # prevent divide by 0 errors
-        diff.where(diff == 0, torch.as_tensor(1e-20).to(x1))
-        K = torch.sin(diff).div(diff)
-        print('covar module', x1.shape, x2.shape, K.shape, type(K))
-        #print('kernel: ', K)
-
-        return gpytorch.lazify(K)
-
 
 class GPModel(ExactGP, GPyTorchModel):
     _num_outputs = 1  # to inform GPyTorchModel API
@@ -470,7 +447,6 @@ class GPModel(ExactGP, GPyTorchModel):
         mean_x = self.mean_module(x)
         covar_x = self.covar_module(x)
         return MultivariateNormal(mean_x, covar_x)
-
 
 class QNN_BO():
     def __init__(self, objective_type, num_qubits, MAX_OP_NODES, N_TRIALS, N_BATCH, BATCH_SIZE, MC_SAMPLES, device=None, dtype=None):
@@ -498,9 +474,9 @@ class QNN_BO():
 
     ## PROBLEM SETUP
     def obj_func(self, X):
-        """Feasibility weighted objective"""
-        #print(X)
-
+        """
+        Objective function that decode X into circuit and pass it to a training task.
+        """
         latent_func_values = []
         for enc in X.detach().numpy():
             qc = self.vec_to_circuit(vec=enc)
@@ -537,11 +513,6 @@ class QNN_BO():
     def initialize_model(self, train_x, train_obj, covar_module=None, input_transform=None, state_dict=None):
         # define models for objective
 
-        #covar_module = covar_module or gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
-
-        #covar_module = covar_module or FirstSincKernel()
-
-
         if covar_module is None:
             covar_module = CircuitDistKernel(encoder=self.circuit_to_vec,
                                              decoder=self.vec_to_circuit,
@@ -562,70 +533,6 @@ class QNN_BO():
         if state_dict is not None:
             model.load_state_dict(state_dict)
         return mll, model
-
-    def fit_gp_model(self, model, mll):
-        optimizer = torch.optim.SGD([{'params': model.parameters()}], lr=0.1)
-        NUM_EPOCHS = 150
-
-        mll.model.train()
-
-        for epoch in range(NUM_EPOCHS):
-            # clear gradients
-            optimizer.zero_grad()
-            # forward pass through the model to obtain the output MultivariateNormal
-            #print(model.train_inputs.shape, model.train_inputs)
-            output = model(model.train_inputs)
-            # Compute negative marginal log likelihood
-            loss = - mll(output, model.train_targets)
-            # back prop gradients
-            loss.backward()
-            # print every 10 iterations
-            if (epoch + 1) % 10 == 0:
-                print(
-                    f"Epoch {epoch + 1:>3}/{NUM_EPOCHS} - Loss: {loss.item():>4.3f} "
-                    f"noise: {model.likelihood.noise.item():>4.3f}"
-                )
-            optimizer.step()
-        return mll.model.eval()
-
-    ## Zero-th order optimizer of acqf
-    def cmaes_optimize_acqf(self, acq_func, bounds):
-        """
-        Return solution candidates for the acquisition function being maximized
-        """
-        print(bounds)
-        candidates = torch.empty(size=(self.BATCH_SIZE, self.encoding_length), device=self.device, dtype=self.dtype)
-
-        for i in range(self.BATCH_SIZE):
-            # get initial condition for CMAES in numpy form
-            # note that CMAES expects a different shape (no explicit q-batch dimension)
-            x0 = np.random.normal(loc=0.5,scale=0.4,size=self.encoding_length).clip(bounds[0].numpy(), bounds[1].numpy())
-
-            # create the CMA-ES optimizer
-            es = cma.CMAEvolutionStrategy(
-                x0=x0,
-                sigma0=0.2,
-                inopts={'bounds': bounds.tolist(), 'popsize': 64, 'verbose':-1},
-            )
-
-
-            # speed up things by telling pytorch not to generate a compute graph in the background
-            with torch.no_grad():
-                # Run the optimization loop using the ask/tell interface -- this uses
-                # PyCMA's default settings, see the PyCMA documentation for how to modify these
-                while not es.stop():
-                    xs = es.ask()  # as for new points to evaluate
-                    # convert to Tensor for evaluating the acquisition function
-                    X = torch.tensor(xs, device=self.device, dtype=self.dtype)
-                    # evaluate the acquisition function (optimizer assumes we're minimizing)
-                    Y = - acq_func(X.unsqueeze(-2))  # acquisition functions require an explicit q-batch dimension
-                    y = Y.view(-1).double().numpy()  # convert result to numpy array
-                    #print(X.shape, Y.shape, y.shape)
-                    es.tell(xs, y)  # return the result to the optimizer
-
-            # convert result back to a torch tensor
-            candidates[i] = torch.from_numpy(es.best.x).to(candidates)
-        return candidates
 
     def lbfgsb_optimize_acqf(self, acq_func, bounds):
         def neg_acq_func(x):
@@ -663,16 +570,13 @@ class QNN_BO():
         #     }
         # )
 
-        #candidates = self.cmaes_optimize_acqf(acq_func=acq_func, bounds=bounds)
         candidates = self.lbfgsb_optimize_acqf(acq_func=acq_func, bounds=bounds)
 
         #print(candidates.shape)
 
         # observe new values
         new_x = unnormalize(candidates.detach(), bounds=bounds)
-        #print(new_x)
 
-        #train_obj = [self.latent_func(self.vec_to_circuit(vec=vec)) for vec in new_x.numpy()]
         train_obj = self.obj_func(X=new_x)
         train_obj = torch.as_tensor(train_obj, device=self.device, dtype=self.dtype).unsqueeze(-1)
 
@@ -704,12 +608,23 @@ class QNN_BO():
                     best_f=standardize(train_obj).max(),
                     sampler=qmc_sampler
                 )
-            elif acqf_choice == 'UCB':
+            elif acqf_choice == 'EI':
+                acqf = ExpectedImprovement(
+                    model=model,
+                    best_f=standardize(train_obj).max()
+                )
+
+            elif acqf_choice == 'qUCB':
                 qmc_sampler = SobolQMCNormalSampler(num_samples=self.MC_SAMPLES)
                 acqf = qUpperConfidenceBound(
                     model=model,
                     beta=0.1,
                     sampler=qmc_sampler
+                )
+            elif acqf_choice == 'UCB':
+                acqf = UpperConfidenceBound(
+                    model=model,
+                    beta=0.1
                 )
 
             elif acqf_choice == 'GIBBON':
@@ -730,9 +645,9 @@ class QNN_BO():
                 for name, param in model.named_parameters():
                     print(name, param)
 
-                fit_gpytorch_model(mll=mll, optimizer=botorch.optim.fit.fit_gpytorch_torch, max_retries=10)
-                #fit_gpytorch_model(mll=mll, max_retries=10)
-                #self.fit_gp_model(model=model, mll=mll)
+                #fit_gpytorch_model(mll=mll, optimizer=botorch.optim.fit.fit_gpytorch_torch, max_retries=10)
+                fit_gpytorch_model(mll=mll, max_retries=10)
+
 
                 print('Model parameters AFTER fitting:', model.likelihood.noise, model.covar_module.alpha, model.covar_module.alphanorm, '\n',
                       model.covar_module.beta,'\n', model.covar_module.betanorm)
@@ -766,7 +681,7 @@ class QNN_BO():
         return best_observed
 
 
-    def optimize_new(self, bounds, acqf_choices, num_init_points):
+    def optimize(self, bounds, acqf_choices, num_init_points):
         verbose = False
 
         #best_observed_all_ei, best_observed_all_mes, best_random_all = [], [], []
@@ -794,133 +709,7 @@ class QNN_BO():
         return list_of_best_observed_all
 
 
-
-    # def optimize(self, bounds, num_init_points):
-    #     verbose = False
-    #
-    #     best_observed_all_ei, best_observed_all_mes, best_random_all = [], [], []
-    #
-    #     # average over multiple trials
-    #     for trial in range(1, self.N_TRIALS + 1):
-    #
-    #         print(f"\nTrial {trial:>2} of {self.N_TRIALS} ", end="")
-    #         best_observed_ei, best_observed_mes, best_random = [], [], []
-    #
-    #         # call helper functions to generate initial training data and initialize model
-    #         train_x_init, train_obj_init, best_observed_value_init = self.generate_initial_data(n=num_init_points)
-    #         mll_ei, model_ei = self.initialize_model(normalize(train_x_init, bounds=bounds), standardize(train_obj_init))
-    #         mll_mes, model_mes = self.initialize_model(normalize(train_x_init, bounds=bounds), standardize(train_obj_init))
-    #
-    #         best_observed_ei.append(best_observed_value_init)
-    #         best_observed_mes.append(best_observed_value_init)
-    #         best_random.append(best_observed_value_init)
-    #
-    #         train_x_ei = train_x_init.clone()
-    #         train_obj_ei = train_obj_init.clone()
-    #         train_x_mes = train_x_init.clone()
-    #         train_obj_mes = train_obj_init.clone()
-    #
-    #         print('data initialization: ', train_x_init.shape, train_obj_init.shape, best_observed_ei)#, best_observed_mes)
-    #
-    #         # run n_batch rounds of BayesOpt after the initial random batch
-    #         for iteration in range(1, self.N_BATCH + 1):
-    #             print('iteration: ', iteration)
-    #             t0 = time.time()
-    #
-    #             # fit the models
-    #             # for name, param in model_ei.named_parameters():
-    #             #     print(name, param)
-    #             print('Model parameters BEFORE fitting:', model_ei.covar_module.alpha, model_ei.covar_module.alphanorm,
-    #                   model_ei.covar_module.beta, model_ei.covar_module.betanorm, model_ei.likelihood.noise)
-    #
-    #             print('fit the model')
-    #             #fit_gpytorch_model(mll=mll_ei, max_retries=10)
-    #             #fit_gpytorch_model(mll=mll_mes, max_retries=10)
-    #             fit_gpytorch_model(mll=mll_ei, optimizer=botorch.optim.fit.fit_gpytorch_torch, max_retries=10)
-    #             fit_gpytorch_model(mll=mll_mes, optimizer=botorch.optim.fit.fit_gpytorch_torch, max_retries=10)
-    #
-    #
-    #             print('Model parameters AFTER fitting:', model_ei.covar_module.alpha, model_ei.covar_module.alphanorm,
-    #                   model_ei.covar_module.beta, model_ei.covar_module.betanorm, model_ei.likelihood.noise)
-    #             # define the qEI and qNEI acquisition modules using a QMC sampler
-    #             qmc_sampler = SobolQMCNormalSampler(num_samples=self.MC_SAMPLES)
-    #
-    #             # for best_f, we use the best observed noisy values as an approximation
-    #             qEI = qExpectedImprovement(
-    #                 model=model_ei,
-    #                 best_f=standardize(train_obj_ei).max(),
-    #                 sampler=qmc_sampler
-    #             )
-    #
-    #             candidate_set = torch.rand(25, bounds.size(1), device=self.device, dtype=self.dtype)
-    #             candidate_set = bounds[0] + (bounds[1] - bounds[0]) * candidate_set
-    #
-    #             qMES = qMaxValueEntropy(
-    #                 model=model_ei,
-    #                 candidate_set=candidate_set)
-    #
-    #             print('optimize acquisition function')
-    #             # optimize and get new observation
-    #             new_x_ei, new_obj_ei = self.optimize_acqf_and_get_observation(acq_func=qEI, bounds=bounds)
-    #             new_x_mes, new_obj_mes = self.optimize_acqf_and_get_observation(acq_func=qMES, bounds=bounds)
-    #             print("New candidates", new_obj_ei.shape, new_obj_mes.shape)
-    #
-    #
-    #             # update training points
-    #             train_x_ei = torch.cat([train_x_ei, new_x_ei])
-    #             train_obj_ei = torch.cat([train_obj_ei, new_obj_ei])
-    #
-    #             train_x_mes = torch.cat([train_x_mes, new_x_mes])
-    #             train_obj_mes = torch.cat([train_obj_mes, new_obj_mes])
-    #
-    #             # update progress
-    #             print('update random')
-    #             best_random = self.update_random_observations(best_random)
-    #             print('update qEI best value')
-    #             best_value_ei = train_obj_ei.max().item()
-    #             best_observed_ei.append(best_value_ei)
-    #             print('update qMES best value')
-    #             best_value_mes = train_obj_mes.max().item()
-    #             best_observed_mes.append(best_value_mes)
-    #
-    #             print('end of batch: ', train_x_ei.shape, train_obj_ei.shape, best_observed_ei, best_observed_mes)
-    #
-    #             # reinitialize the models so they are ready for fitting on next iteration
-    #             # use the current state dict to speed up fitting
-    #             mll_ei, model_ei = self.initialize_model(
-    #                 normalize(train_x_ei, bounds=bounds),
-    #                 standardize(train_obj_ei),
-    #                 state_dict=model_ei.state_dict(),
-    #             )
-    #             mll_mes, model_mes = self.initialize_model(
-    #                 normalize(train_x_mes, bounds=bounds),
-    #                 standardize(train_obj_mes),
-    #                 state_dict=model_mes.state_dict(),
-    #             )
-    #             t1 = time.time()
-    #
-    #             if verbose:
-    #                 print(
-    #                     f"\nBatch {iteration:>2}: best_value (random, qEI) = "
-    #                     f"({max(best_random):>4.2f}, {best_value_ei:>4.2f}), "
-    #                     f"time = {t1 - t0:>4.2f}.", end=""
-    #                 )
-    #             else:
-    #                 print(".", end="")
-    #
-    #         best_observed_all_ei.append(best_observed_ei)
-    #         best_observed_all_mes.append(best_observed_mes)
-    #         best_random_all.append(best_random)
-    #
-    #     return best_observed_all_ei, best_observed_all_mes, best_random_all
-    #     #return best_observed_all_ei, best_random_all
-
-
     def plot(self, to_plot, filename):
-        import numpy as np
-        import matplotlib.pyplot as plt
-        #plt.interactive(False)
-
         def ci(y):
             ## Confidence interval
             return 1.96 * y.std(axis=0) / np.sqrt(self.N_TRIALS)
@@ -930,14 +719,26 @@ class QNN_BO():
         fig, ax = plt.subplots(1, 1, figsize=(8, 6))
         for label, best_observed_all in to_plot.items():
             y = np.asarray(best_observed_all)
-            ax.errorbar(iters, y.mean(axis=0), yerr=ci(y), label=label, linewidth=1.5)
-            print(label, y.mean(axis=0))
+            #ax.errorbar(iters, y.mean(axis=0), yerr=ci(y), label=label, linewidth=1.5)
+            mean_y = y.mean(axis=0)
+            conf = ci(y)
+
+            ax.plot(iters, mean_y, linewidth=1.5, label=label)
+            ax.fill_between(iters, (mean_y - conf), (mean_y + conf), alpha=.1)
+            print(label, mean_y)
 
 
-        plt.plot([0, self.N_BATCH * self.BATCH_SIZE], [1] * 2, 'k', label="true best objective", linewidth=2)
-        ax.set_ylim(bottom=0.)
+        #plt.plot([0, self.N_BATCH * self.BATCH_SIZE], [1] * 2, 'k', linestyle='--', label="true best objective", linewidth=2)
+        plt.axhline(y=1., color='k', linestyle='--', linewidth=2)
+        ax.set_ylim(top=1.05, bottom=0.)
+
+        ax.xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
+
+        fig.suptitle(self.objective_type.upper())
+
         ax.set(xlabel='number of observations (beyond initial points)', ylabel='best objective value')
         ax.legend(loc="lower right")
+        plt.grid()
         plt.savefig(filename, bbox_inches='tight')
         plt.show()
 
@@ -947,21 +748,21 @@ if __name__ == '__main__':
     sys.path.append('/Users/erio/Dropbox/URP project/Code/PQC_composer')
     np.random.seed(20)
     torch.manual_seed(20)
-
     torch.set_printoptions(precision=4)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dtype = torch.double
 
-    BATCH_SIZE = 10
-    num_qubits = 4
-    MAX_OP_NODES = 20
+    num_qubits = 2
+    MAX_OP_NODES = 5  # Maximum number of gates
+    objective_type = 'qft'  # ['qft', 'maxcut']
+    num_init_points = 5  # Number of points sampled randomly at the beginning
 
-    encoding_length = (num_qubits + 1) * MAX_OP_NODES
-    bounds = torch.tensor([[0.] * encoding_length, [1.0] * encoding_length], device=device, dtype=dtype)
+    N_TRIALS = 2  # Number of times the experiments run
+    N_BATCH = 20  # Number of batch per trial
+    BATCH_SIZE = 1  # Number of new points being sampled in a batch
 
-    N_TRIALS = 1
-    N_BATCH = 25
-    MC_SAMPLES = 2048
+    MC_SAMPLES = 2048  # Number of points sampled in optimization of acquisition functions
 
     qnnbo = QNN_BO(
         objective_type = 'qft',
@@ -973,20 +774,13 @@ if __name__ == '__main__':
         MC_SAMPLES = MC_SAMPLES
     )
 
-    # best_observed_all_ei, best_observed_all_mes, best_random_all = qnnbo.optimize(bounds=bounds, num_init_points=5)
-    # #best_observed_all_ei, best_random_all = qnnbo.optimize(bounds=bounds, num_init_points=30)
-    #
-    # #qnnbo.plot(best_observed_all_ei, best_observed_all_nei, best_random_all)
-    # to_plot = {'qEI': best_observed_all_ei, 'qMES': best_observed_all_mes, 'random': best_random_all}
-    # #to_plot = {'qEI': best_observed_all_ei, 'random': best_random_all}
-    #
-    # qnnbo.plot(to_plot)
+    encoding_length = (num_qubits + 1) * MAX_OP_NODES
+    bounds = torch.tensor([[0.] * encoding_length, [1.0] * encoding_length], device=device, dtype=dtype)
 
 
+    acqf_choices = ['random', 'EI', 'UCB', 'GIBBON']
 
-    acqf_choices = ['random', 'qEI', 'UCB', 'GIBBON']
-    num_init_points = 10
-    list_of_best_observed_all = qnnbo.optimize_new(bounds=bounds,acqf_choices=acqf_choices,num_init_points=num_init_points)
+    list_of_best_observed_all = qnnbo.optimize(bounds=bounds, acqf_choices=acqf_choices, num_init_points=num_init_points)
     to_plot = dict(zip(acqf_choices, list_of_best_observed_all))
 
     imgname = '_'.join([qnnbo.objective_type, str(num_qubits), str(MAX_OP_NODES), str(num_init_points), str(BATCH_SIZE), str(N_BATCH), str(N_TRIALS), *acqf_choices])

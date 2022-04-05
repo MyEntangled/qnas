@@ -1,4 +1,4 @@
-import gate_positioning
+
 
 import numpy as np
 
@@ -9,11 +9,12 @@ from scipy.optimize import linear_sum_assignment
 from scipy.linalg import orthogonal_procrustes
 import scipy
 
-import MUBs
-
+import sys
+sys.path.append('/Users/erio/Dropbox/URP project/Code/PQC_composer/src')
 from QuOTMANN.gate_info import SINGLE_QUBIT_DETERMINISTIC_GATES, SINGLE_QUBIT_VARIATIONAL_GATES, \
     TWO_QUBIT_DETERMINISTIC_GATES, TWO_QUBIT_VARIATIONAL_GATES, ADMISSIBLE_GATES, DIRECTED_GATES, UNITARY
-
+import gate_positioning
+import MUBs
 
 def optimize_phases(X:np.ndarray, Y:np.ndarray):
     """
@@ -210,7 +211,7 @@ def path_unitary(V1, V2, qargs1, qargs2, num_qubits, theta, t):
     #print(theta, t, np.linalg.norm(U_path - V1_theta_matrix), np.linalg.norm(U_path - V2_theta_matrix))
     return U_path
 
-def _shape_distance_with_config(num_qubits, V1, V2, qargs1, qargs2, num_samples=4, num_trials=200):
+def _shape_distance_with_config(num_qubits, V1, V2, qargs1, qargs2, num_theta_samples=4, num_trials=500):
     '''
     Return the shape distance between two quantum gates
     :param V1:
@@ -228,9 +229,9 @@ def _shape_distance_with_config(num_qubits, V1, V2, qargs1, qargs2, num_samples=
     lo_bound = -np.pi
     up_bound = np.pi
     spectrum_V1 = get_state_spectrum(num_qubits, V1, qargs1,
-                                     np.linspace(lo_bound, up_bound, num_samples, endpoint=False), anchor_states)
+                                     np.linspace(lo_bound, up_bound, num_theta_samples, endpoint=False), anchor_states)
     spectrum_V2 = get_state_spectrum(num_qubits, V2, qargs2,
-                                     np.linspace(lo_bound, up_bound, num_samples, endpoint=False), anchor_states)
+                                     np.linspace(lo_bound, up_bound, num_theta_samples, endpoint=False), anchor_states)
     print(spectrum_V1.shape, spectrum_V2.shape)
 
     tol = 10e-5
@@ -238,7 +239,7 @@ def _shape_distance_with_config(num_qubits, V1, V2, qargs1, qargs2, num_samples=
 
     opt_val_list = []
     for i in range(num_trials):
-        print(f'Trial {i+1}: ')
+        #print(f'Trial {i+1}: ')
 
 
         if i > 0:
@@ -287,7 +288,7 @@ def _shape_distance_with_config(num_qubits, V1, V2, qargs1, qargs2, num_samples=
 
 
 
-def compute_shape_distance(V1: str, V2: str, num_qubits: int) -> dict:
+def compute_shape_distance(V1: str, V2: str, num_qubits: int, num_theta_samples:int) -> dict:
     all_positions = gate_positioning.all_relative_positions(V1=V1, V2=V2, num_qubits=num_qubits)
     all_distances = {}
 
@@ -295,7 +296,7 @@ def compute_shape_distance(V1: str, V2: str, num_qubits: int) -> dict:
         if (V1 in SINGLE_QUBIT_VARIATIONAL_GATES or V1 in TWO_QUBIT_VARIATIONAL_GATES) and \
             (V2 in SINGLE_QUBIT_VARIATIONAL_GATES or V2 in TWO_QUBIT_VARIATIONAL_GATES):
 
-            all_distances[pos_tag] = _shape_distance_with_config(num_qubits=num_qubits, V1=V1, V2=V2,
+            all_distances[pos_tag] = _shape_distance_with_config(num_qubits=num_qubits, V1=V1, V2=V2, num_theta_samples=num_theta_samples,
                                                              qargs1=qargs[0], qargs2=qargs[1])
         elif (V1 in SINGLE_QUBIT_DETERMINISTIC_GATES or V1 in TWO_QUBIT_DETERMINISTIC_GATES) and \
             (V2 in SINGLE_QUBIT_DETERMINISTIC_GATES or V2 in TWO_QUBIT_DETERMINISTIC_GATES):
@@ -314,6 +315,7 @@ def modify_shape_dist_dict(all_shape_distances):
 
     for pairname, dist in all_shape_distances.items():
         V1,V2,num_qubits,pos_tag = pairname.split('_')
+
         all_positioning = gate_positioning.all_relative_positions(V1=V1,V2=V2,num_qubits=int(num_qubits))
 
         if pairname in all_positioning:
@@ -326,7 +328,8 @@ def modify_shape_dist_dict(all_shape_distances):
 
             rev_dist = all_shape_distances[rev_pairname]
             #print(pairname, rev_pairname, qargs, rev_qargs, dist, rev_dist)
-            if not np.isclose(dist, rev_dist):
+            #if not np.isclose(dist, rev_dist):
+            if ADMISSIBLE_GATES.index(V1) <= ADMISSIBLE_GATES.index(V2) and abs(dist - rev_dist) >= 0.05:
                 print(pairname, rev_pairname, qargs, rev_qargs, dist, rev_dist)
 
             all_shape_distances[pairname] = min(all_shape_distances[pairname], all_shape_distances[rev_pairname])
@@ -334,13 +337,18 @@ def modify_shape_dist_dict(all_shape_distances):
 
 
 if __name__ == '__main__':
+    import sys
+    sys.path.append('/Users/erio/Dropbox/URP project/Code/PQC_composer')
+    np.random.seed(20)
 
-    print(compute_shape_distance('rx', 'rz', num_qubits=3))
-    print(compute_shape_distance('rz', 'rx', num_qubits=3))
+    num_theta_samples = 12
+
+    # print(compute_shape_distance('rx', 'rz', num_qubits=2, num_theta_samples=num_theta_samples))
+    # print(compute_shape_distance('rz', 'rx', num_qubits=2, num_theta_samples=num_theta_samples))
 
     import pickle
 
-    filename = './all_shape_distances.pkl'
+    filename = './12theta_raw_all_shape_distances.pkl'
 
     try:
         with open(filename, 'rb') as f:
@@ -354,17 +362,15 @@ if __name__ == '__main__':
     for q in range(1,5):
         for i,V1 in enumerate(ADMISSIBLE_GATES):
             for j,V2 in enumerate(ADMISSIBLE_GATES):
-
                 if q == 1:
                     if V1 in TWO_QUBIT_DETERMINISTIC_GATES or V1 in TWO_QUBIT_VARIATIONAL_GATES \
                         or V2 in TWO_QUBIT_DETERMINISTIC_GATES or V2 in TWO_QUBIT_VARIATIONAL_GATES:
                             continue ## not enough qubit
 
                 positions = gate_positioning.all_relative_positions(V1=V1, V2=V2, num_qubits=q)
-                #if list(positions.keys())[0] not in ALL_SHAPE_DISTANCES:
-                if not all(pos in ALL_SHAPE_DISTANCES for pos in list(positions.keys())):
+                if any([pos not in ALL_SHAPE_DISTANCES for pos in positions.keys()]):
                     try:
-                        shape_distance = compute_shape_distance(V1,V2, num_qubits=q)
+                        shape_distance = compute_shape_distance(V1,V2, num_qubits=q, num_theta_samples=num_theta_samples)
                     except:
                         continue
                     else:
@@ -378,6 +384,8 @@ if __name__ == '__main__':
         loaded_dict = pickle.load(f)
         print(loaded_dict == ALL_SHAPE_DISTANCES)
 
+
+    ## Modify
     ALL_SHAPE_DISTANCES = modify_shape_dist_dict(ALL_SHAPE_DISTANCES)
-    # with open('all_shape_distances.pkl', 'wb') as f:
-    #     pickle.dump(ALL_SHAPE_DISTANCES, f)
+    with open(filename, 'wb') as f:
+        pickle.dump(ALL_SHAPE_DISTANCES, f)
