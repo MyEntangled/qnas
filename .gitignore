@@ -16,3 +16,5 @@ src/notebook_testing
 gate_distance/unused
 retired/
 notebooks/
+src/12theta_raw_all_shape_distances.pkl
+src/8theta_raw_all_shape_distances.pkl
