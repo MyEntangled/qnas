@@ -1,43 +1,43 @@
-import botorch.optim.fit
 import numpy as np
 import torch
+import gpytorch
 
 from embedding import qc_embedding
 from QuOTMANN import optimal_transport, structural_cost
 from quantum_obj import QFT_objective, MAXCUT_objective
 
-import gpytorch
-
-from botorch.models import SingleTaskGP
-from gpytorch.mlls.exact_marginal_log_likelihood import ExactMarginalLogLikelihood
-
 from botorch.models.gpytorch import GPyTorchModel
-from gpytorch.models import ExactGP
-from gpytorch.means import ConstantMean
-from gpytorch.distributions import MultivariateNormal
-from gpytorch.likelihoods import GaussianLikelihood
-
-from botorch.optim import optimize_acqf
-
-from scipy.optimize import minimize
+from botorch.models import SingleTaskGP
 
 from botorch import fit_gpytorch_model
+import botorch.optim.fit
+
 from botorch.acquisition.monte_carlo import qExpectedImprovement, qUpperConfidenceBound
 from botorch.acquisition import ExpectedImprovement, UpperConfidenceBound
 from botorch.acquisition.max_value_entropy_search import qLowerBoundMaxValueEntropy
 
 from botorch.sampling.samplers import SobolQMCNormalSampler
 from botorch.exceptions import BadInitialCandidatesWarning
-import time
-import warnings
-warnings.filterwarnings('ignore', category=BadInitialCandidatesWarning)
-warnings.filterwarnings('ignore', category=RuntimeWarning)
 
 from botorch.utils.transforms import standardize, normalize, unnormalize
 from botorch.utils.sampling import draw_sobol_samples
 
+from gpytorch.mlls.exact_marginal_log_likelihood import ExactMarginalLogLikelihood
+from gpytorch.models import ExactGP
+from gpytorch.means import ConstantMean
+from gpytorch.distributions import MultivariateNormal
+from gpytorch.likelihoods import GaussianLikelihood
+
+from scipy.optimize import minimize
+
 import matplotlib.pyplot as plt
 from matplotlib import ticker
+
+import pickle
+
+import warnings
+warnings.filterwarnings('ignore', category=BadInitialCandidatesWarning)
+warnings.filterwarnings('ignore', category=RuntimeWarning)
 
 class CircuitDistKernel(gpytorch.kernels.Kernel):
 
@@ -481,7 +481,8 @@ class QNN_BO():
         for enc in X.detach().numpy():
             qc = self.vec_to_circuit(vec=enc)
             latent_func_values.append(self.latent_func(qc))
-        return latent_func_values
+        #return latent_func_values
+        return torch.as_tensor(latent_func_values, device=self.device, dtype=self.dtype).unsqueeze(-1)
 
     def latent_func(self,circuit):
         if self.objective_type == 'qft':
@@ -497,18 +498,18 @@ class QNN_BO():
         return qc_embedding.qc_to_enc(qc=qc,MAX_OP_NODES=self.MAX_OP_NODES)
 
     ## MODEL INITIALIZATION
-    def generate_initial_data(self, n):
+    def generate_initial_data(self, n, bounds):
         # generate training data
 
         #train_x = torch.rand(n, self.encoding_length, device=self.device, dtype=self.dtype)
         train_x = draw_sobol_samples(bounds=bounds, n=n, q=1, seed=torch.randint(0, 10000, (1,)).item()).squeeze(1)
 
-        #train_obj = [self.latent_func(self.vec_to_circuit(vec=vec)) for vec in train_x.numpy()]
         train_obj = self.obj_func(X=train_x)
-        train_obj = torch.as_tensor(train_obj, device=self.device, dtype=self.dtype).unsqueeze(-1)
+        #train_obj = torch.as_tensor(train_obj, device=self.device, dtype=self.dtype).unsqueeze(-1)
 
         best_observed_value = train_obj.max().item()
-        return train_x, train_obj, best_observed_value
+        best_observed_x = train_x[torch.nonzero(torch.isclose(train_obj, train_obj.max()).ravel()).ravel()].tolist()
+        return train_x, train_obj, best_observed_x, best_observed_value
 
     def initialize_model(self, train_x, train_obj, covar_module=None, input_transform=None, state_dict=None):
         # define models for objective
@@ -557,19 +558,6 @@ class QNN_BO():
     def optimize_acqf_and_get_observation(self, acq_func, bounds):
         """Optimizes the acquisition function, and returns a new candidate and a noisy observation."""
         # optimize
-
-        # candidates, _ = optimize_acqf(
-        #     acq_function=acq_func,
-        #     bounds=bounds,
-        #     q=self.BATCH_SIZE,
-        #     num_restarts=10,
-        #     raw_samples=512,  # used for intialization heuristic
-        #     options={
-        #         "batch_limit": 3,
-        #         "maxiter": 200,
-        #     }
-        # )
-
         candidates = self.lbfgsb_optimize_acqf(acq_func=acq_func, bounds=bounds)
 
         #print(candidates.shape)
@@ -578,22 +566,51 @@ class QNN_BO():
         new_x = unnormalize(candidates.detach(), bounds=bounds)
 
         train_obj = self.obj_func(X=new_x)
-        train_obj = torch.as_tensor(train_obj, device=self.device, dtype=self.dtype).unsqueeze(-1)
+        #train_obj = torch.as_tensor(train_obj, device=self.device, dtype=self.dtype).unsqueeze(-1)
 
         return new_x, train_obj
 
-    def update_random_observations(self, best_random, num_random_points=1):
+    # def update_random_observations(self, best_random, num_random_points=1):
+    #     """Simulates a random policy by taking a the current list of best values observed randomly,
+    #     drawing a new random point, observing its value, and updating the list.
+    #     """
+    #     #rand_x = torch.rand(BATCH_SIZE, self.encoding_length)
+    #     rand_x = draw_sobol_samples(bounds=bounds, n=num_random_points, q=1).squeeze(1)
+    #     next_random_best = self.obj_func(X=rand_x)
+    #     next_random_best = torch.as_tensor(next_random_best, device=self.device, dtype=self.dtype).max().item()
+    #     best_random.append(max(best_random[-1], next_random_best))
+    #     return best_random
+
+    def update_random_observations(self, best_random_x, best_random_value, num_random_points=1):
         """Simulates a random policy by taking a the current list of best values observed randomly,
         drawing a new random point, observing its value, and updating the list.
         """
-        #rand_x = torch.rand(BATCH_SIZE, self.encoding_length)
         rand_x = draw_sobol_samples(bounds=bounds, n=num_random_points, q=1).squeeze(1)
-        next_random_best = self.obj_func(X=rand_x)
-        next_random_best = torch.as_tensor(next_random_best, device=self.device, dtype=self.dtype).max().item()
-        best_random.append(max(best_random[-1], next_random_best))
-        return best_random
+        rand_obj = self.obj_func(X=rand_x)
 
-    def bayesopt_trial(self, model, mll, train_x, train_obj, best_observed=[], acqf_choice='qEI', candidate_set_size=10):
+        next_random_best_value = rand_obj.max().item()
+        next_random_best_x = rand_x[torch.nonzero(torch.isclose(rand_obj, rand_obj.max()).ravel()).ravel()].tolist()
+        # print(rand_x.shape, rand_obj.shape)
+        # print(rand_x[torch.nonzero(torch.isclose(rand_obj, rand_obj.max())).ravel()].shape)
+        # print("best y", best_random_value)
+        # print("next y", next_random_best_value)
+        # print("best x", best_random_x)
+        # print("next x", next_random_best_x)
+
+        if best_random_value[-1] > next_random_best_value:
+            best_random_value.append(best_random_value[-1])
+
+        elif best_random_value[-1] < next_random_best_value:
+            best_random_value.append(next_random_best_value)
+            best_random_x = next_random_best_x
+
+        else:
+            best_random_value.append(next_random_best_value)
+            best_random_x += next_random_best_x
+
+        return best_random_x, best_random_value
+
+    def bayesopt_trial(self, model, mll, train_x, train_obj, best_observed_x=[], best_observed_value=[], acqf_choice='random', candidate_set_size=10, torch_optimizer=True):
         print('Choice of acquisition function: ', acqf_choice)
 
         is_random_acqf = acqf_choice == 'random'
@@ -635,7 +652,7 @@ class QNN_BO():
 
             if is_random_acqf:
                 print('update random')
-                best_observed = self.update_random_observations(best_observed)
+                best_observed_x, best_observed_value = self.update_random_observations(best_observed_x, best_observed_value)
 
             else: #optimize and get new observation
 
@@ -645,8 +662,10 @@ class QNN_BO():
                 for name, param in model.named_parameters():
                     print(name, param)
 
-                #fit_gpytorch_model(mll=mll, optimizer=botorch.optim.fit.fit_gpytorch_torch, max_retries=10)
-                fit_gpytorch_model(mll=mll, max_retries=10)
+                if torch_optimizer:
+                    fit_gpytorch_model(mll=mll, optimizer=botorch.optim.fit.fit_gpytorch_torch, max_retries=10)
+                else:
+                    fit_gpytorch_model(mll=mll, max_retries=10)
 
 
                 print('Model parameters AFTER fitting:', model.likelihood.noise, model.covar_module.alpha, model.covar_module.alphanorm, '\n',
@@ -656,7 +675,7 @@ class QNN_BO():
 
                 print('optimize acquisition function')
                 new_x, new_obj = self.optimize_acqf_and_get_observation(acq_func=acqf, bounds=bounds)
-                print("New candidates", new_obj.shape)
+                #print("New candidates", new_obj.shape)
 
                 # update training points
                 train_x = torch.cat([train_x, new_x])
@@ -666,9 +685,12 @@ class QNN_BO():
 
                 print('update acqf best value')
                 best_value = train_obj.max().item()
-                best_observed.append(best_value)
+                best_x = train_x[torch.nonzero(torch.isclose(train_obj, train_obj.max()).ravel()).ravel()].tolist()
+                best_observed_value.append(best_value)
+                #best_observed_x.append(best_x)
+                best_observed_x = best_x
 
-                print('end of batch: ', train_x.shape, train_obj.shape, best_observed)
+                print('end of batch: ', train_x.shape, train_obj.shape, best_observed_value)
 
                 # reinitialize the models so they are ready for fitting on next iteration
                 # use the current state dict to speed up fitting
@@ -678,14 +700,17 @@ class QNN_BO():
                     state_dict=model.state_dict(),
                 )
 
-        return best_observed
+        return best_observed_x, best_observed_value
 
 
-    def optimize(self, bounds, acqf_choices, num_init_points):
+    def optimize(self, bounds, acqf_choices, num_init_points, optimizer):
         verbose = False
+        assert optimizer in ['torch','scipy']
+        torch_optimizer = True if optimizer == 'torch' else False
 
         #best_observed_all_ei, best_observed_all_mes, best_random_all = [], [], []
-        list_of_best_observed_all = [[] for _ in range(len(acqf_choices))]
+        list_of_best_observed_value_all = [[] for _ in range(len(acqf_choices))]
+        list_of_best_observed_x_all = [[] for _ in range(len(acqf_choices))]
 
         # average over multiple trials
         for trial in range(1, self.N_TRIALS + 1):
@@ -693,20 +718,25 @@ class QNN_BO():
             print(f"\nTrial {trial:>2} of {self.N_TRIALS} ", end="")
 
             # call helper functions to generate initial training data and initialize model
-            train_x_init, train_obj_init, best_observed_value_init = self.generate_initial_data(n=num_init_points)
+            train_x_init, train_obj_init, best_observed_x_init, best_observed_value_init = self.generate_initial_data(n=num_init_points, bounds=bounds)
 
-
-            print('data initialization: ', train_x_init.shape, train_obj_init.shape, best_observed_value_init)
+            print('data initialization: ', train_x_init.shape, train_obj_init.shape, best_observed_x_init, best_observed_value_init)
 
             # run n_batch rounds of BayesOpt after the initial random batch
             for idx,choice in enumerate(acqf_choices):
                 mll, model = self.initialize_model(normalize(train_x_init, bounds=bounds), standardize(train_obj_init))
-                best_observed = self.bayesopt_trial(model, mll, train_x_init.clone(), train_obj_init.clone(),
-                                                                 best_observed=[best_observed_value_init],
-                                                                 acqf_choice=choice,candidate_set_size=50)
-                list_of_best_observed_all[idx].append(best_observed)
+                ## best_observed_value stores the optimal obj over batchs
+                ## best_observed_x only stores the final optimal circuit(s)
+                best_observed_x, best_observed_value = self.bayesopt_trial(model, mll, train_x_init.clone(), train_obj_init.clone(),
+                                                                 best_observed_x=best_observed_x_init,
+                                                                 best_observed_value=[best_observed_value_init],
+                                                                 acqf_choice=choice,
+                                                                 candidate_set_size=50,
+                                                                 torch_optimizer=torch_optimizer)
+                list_of_best_observed_value_all[idx].append(best_observed_value)
+                list_of_best_observed_x_all[idx].append(best_observed_x)
 
-        return list_of_best_observed_all
+        return list_of_best_observed_x_all, list_of_best_observed_value_all
 
 
     def plot(self, to_plot, filename):
@@ -730,7 +760,7 @@ class QNN_BO():
 
         #plt.plot([0, self.N_BATCH * self.BATCH_SIZE], [1] * 2, 'k', linestyle='--', label="true best objective", linewidth=2)
         plt.axhline(y=1., color='k', linestyle='--', linewidth=2)
-        ax.set_ylim(top=1.05, bottom=0.)
+        ax.set_ylim(top=1.05, bottom=0.45)
 
         ax.xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
 
@@ -742,24 +772,46 @@ class QNN_BO():
         plt.savefig(filename, bbox_inches='tight')
         plt.show()
 
+    def plot_ansatz(self, to_plot_ansatz):
+        print(to_plot_ansatz)
+        for label, best_observed_x_trials in to_plot_ansatz.items():
+            for trial,best_observed_x in enumerate(best_observed_x_trials):
+                print(label, trial)
+
+                print(len(best_observed_x))
+
+                #for vec in best_observed_x[-1]: # Only draw the circuit from the last batch
+                    # print(np.array(vec).shape)
+                    # qc = self.vec_to_circuit(np.array(vec))
+                    # print(qc.draw())
+                    # print('-------------------------------')
+
+                for vec in best_observed_x:
+                    qc = self.vec_to_circuit(np.array(vec))
+                    print(qc.draw())
+                    print(self.latent_func(qc))
+                    print('----------------------------------')
+
 
 if __name__ == '__main__':
     import sys
     sys.path.append('/Users/erio/Dropbox/URP project/Code/PQC_composer')
-    np.random.seed(20)
-    torch.manual_seed(20)
+
+    seed = 1127 #27112001
+    np.random.seed(seed)
+    torch.manual_seed(seed)
     torch.set_printoptions(precision=4)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dtype = torch.double
 
     num_qubits = 2
-    MAX_OP_NODES = 5  # Maximum number of gates
+    MAX_OP_NODES = 6  # Maximum number of gates
     objective_type = 'qft'  # ['qft', 'maxcut']
-    num_init_points = 5  # Number of points sampled randomly at the beginning
+    num_init_points = 10  # Number of points sampled randomly at the beginning
 
-    N_TRIALS = 2  # Number of times the experiments run
-    N_BATCH = 20  # Number of batch per trial
+    N_TRIALS = 5  # Number of times the experiments run
+    N_BATCH = 20 # Number of batch per trial
     BATCH_SIZE = 1  # Number of new points being sampled in a batch
 
     MC_SAMPLES = 2048  # Number of points sampled in optimization of acquisition functions
@@ -778,11 +830,22 @@ if __name__ == '__main__':
     bounds = torch.tensor([[0.] * encoding_length, [1.0] * encoding_length], device=device, dtype=dtype)
 
 
-    acqf_choices = ['random', 'EI', 'UCB', 'GIBBON']
+    acqf_choices = ['random', 'EI', 'GIBBON']
+    optimizer = 'torch' ## 'torch' or 'scipy'
 
-    list_of_best_observed_all = qnnbo.optimize(bounds=bounds, acqf_choices=acqf_choices, num_init_points=num_init_points)
-    to_plot = dict(zip(acqf_choices, list_of_best_observed_all))
+    list_of_best_observed_x_all, list_of_best_observed_value_all = qnnbo.optimize(bounds=bounds, acqf_choices=acqf_choices, num_init_points=num_init_points, optimizer=optimizer)
 
-    imgname = '_'.join([qnnbo.objective_type, str(num_qubits), str(MAX_OP_NODES), str(num_init_points), str(BATCH_SIZE), str(N_BATCH), str(N_TRIALS), *acqf_choices])
+    # for i in range(len(list_of_best_observed_x_all)):
+    #     print(list_of_best_observed_x_all[i][-1][-1])
+
+    to_plot = dict(zip(acqf_choices, list_of_best_observed_value_all))
+    to_plot_ansatz = dict(zip(acqf_choices, list_of_best_observed_x_all))
+    qnnbo.plot_ansatz(to_plot_ansatz)
+
+    imgname = '_'.join([qnnbo.objective_type, str(num_qubits), str(MAX_OP_NODES), str(num_init_points), str(BATCH_SIZE), str(N_BATCH), str(N_TRIALS), *acqf_choices, optimizer, str(seed)])
     filename = './output/' + imgname
     qnnbo.plot(to_plot, filename)
+
+    pkl_filename = './output/' + imgname + '.pkl'
+    with open(pkl_filename, 'wb') as f:
+        pickle.dump({'QNN':to_plot_ansatz, 'obj':to_plot}, f)
