@@ -1,6 +1,4 @@
-
 qiskit
-cvxpy
 torchtyping
 POT
 galois
