@@ -1,5 +1,10 @@
+
 qiskit
 cvxpy
 torchtyping
 POT
 galois
+networkx
+gpytorch
+botorch
+matplotlib
