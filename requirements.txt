@@ -1,4 +1,5 @@
 qiskit
+qiskit-machine-learning
 torchtyping
 POT
 galois
