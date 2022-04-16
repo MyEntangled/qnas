@@ -4,7 +4,7 @@ import gpytorch
 
 from embedding import qc_embedding
 from QuOTMANN import optimal_transport, structural_cost
-from quantum_obj import QFT_objective, MAXCUT_objective
+from quantum_obj import QFT_objective, MAXCUT_objective, QGAN_objective
 
 from botorch.models.gpytorch import GPyTorchModel
 from botorch.models import SingleTaskGP
@@ -450,11 +450,15 @@ class GPModel(ExactGP, GPyTorchModel):
 
 class QNN_BO():
     def __init__(self, objective_type, num_qubits, MAX_OP_NODES, N_TRIALS, N_BATCH, BATCH_SIZE, MC_SAMPLES, device=None, dtype=None):
+        assert objective_type in ['qft','maxcut','qgan']
         self.objective_type = objective_type
         if self.objective_type == 'qft':
             self.objective = QFT_objective(num_qubits=num_qubits)
         elif self.objective_type == 'maxcut':
-            self.objective = MAXCUT_objective(num_graphs=10,num_nodes=num_qubits)
+            self.objective = MAXCUT_objective(num_graphs=50,num_nodes=num_qubits)
+        else: #'qgan'
+            assert num_qubits <= 3, "QGAN objective only supports <= 3 qubits; otherwise it takes a lot of time."
+            self.objective = QGAN_objective(num_qubits=num_qubits)
 
         self.num_qubits = num_qubits
         self.MAX_OP_NODES = MAX_OP_NODES
@@ -486,9 +490,21 @@ class QNN_BO():
 
     def latent_func(self,circuit):
         if self.objective_type == 'qft':
-            opt_param, opt_val = self.objective.maximize_QFT_fidelity(PQC=circuit)
+            #opt_param, opt_val = self.objective.maximize_QFT_fidelity(PQC=circuit)
+            opt_val = self.objective.maximize_QFT_fidelity(PQC=circuit)
         elif self.objective_type == 'maxcut':
-            opt_param, opt_val = self.objective.maximize_maxcut_hamiltonian(PQC=circuit)
+            #opt_param, opt_val = self.objective.maximize_maxcut_hamiltonian(PQC=circuit)
+            opt_val = self.objective.maximize_maxcut_hamiltonian(PQC=circuit)
+        else: # 'qgan'
+            num_epoch = self.num_qubits * 50
+            if self.num_qubits == 1:
+                self.objective.set_true_distribution(distribution_type='lognormal', mu=1., sigma=1., sample_size=1000)
+            elif self.num_qubits == 2:
+                self.objective.set_true_distribution(distribution_type='lognormal',mu=1.,sigma=1.,sample_size=1000)
+            elif self.num_qubits == 3:
+                self.objective.set_true_distribution(distribution_type='mixnormal',mu=[0.5,3.5],sigma=[1.,0.5],sample_size=1000)
+
+            opt_val = self.objective.optimize_qgan(PQC=circuit, num_epochs=num_epoch, batch_size=100)
         return torch.as_tensor(opt_val, device=self.device, dtype=self.dtype)
 
     def vec_to_circuit(self,vec):
@@ -525,7 +541,6 @@ class QNN_BO():
                                              distance_dict=self.distance_dict,
                                              structral_paths_dict=self.structural_paths_dict
                                              )
-
 
         model = SingleTaskGP(train_x, train_obj, covar_module=covar_module, input_transform=input_transform).to(train_x)
 
@@ -657,10 +672,10 @@ class QNN_BO():
             else: #optimize and get new observation
 
 
-                print('Model parameters BEFORE fitting:',  model.likelihood.noise, model.covar_module.alpha, model.covar_module.alphanorm, '\n',
-                      model.covar_module.beta,'\n', model.covar_module.betanorm)
-                for name, param in model.named_parameters():
-                    print(name, param)
+                # print('Model parameters BEFORE fitting:',  model.likelihood.noise, model.covar_module.alpha, model.covar_module.alphanorm, '\n',
+                #       model.covar_module.beta,'\n', model.covar_module.betanorm)
+                # for name, param in model.named_parameters():
+                #     print(name, param)
 
                 if torch_optimizer:
                     fit_gpytorch_model(mll=mll, optimizer=botorch.optim.fit.fit_gpytorch_torch, max_retries=10)
@@ -668,10 +683,10 @@ class QNN_BO():
                     fit_gpytorch_model(mll=mll, max_retries=10)
 
 
-                print('Model parameters AFTER fitting:', model.likelihood.noise, model.covar_module.alpha, model.covar_module.alphanorm, '\n',
-                      model.covar_module.beta,'\n', model.covar_module.betanorm)
-                for name, param in model.named_parameters():
-                    print(name, param)
+                # print('Model parameters AFTER fitting:', model.likelihood.noise, model.covar_module.alpha, model.covar_module.alphanorm, '\n',
+                #       model.covar_module.beta,'\n', model.covar_module.betanorm)
+                # for name, param in model.named_parameters():
+                #     print(name, param)
 
                 print('optimize acquisition function')
                 new_x, new_obj = self.optimize_acqf_and_get_observation(acq_func=acqf, bounds=bounds)
@@ -733,8 +748,12 @@ class QNN_BO():
                                                                  acqf_choice=choice,
                                                                  candidate_set_size=50,
                                                                  torch_optimizer=torch_optimizer)
-                list_of_best_observed_value_all[idx].append(best_observed_value)
+                if self.objective_type == 'qgan':
+                    list_of_best_observed_value_all[idx].append([-val for val in best_observed_value])
+                else:
+                    list_of_best_observed_value_all[idx].append(best_observed_value)
                 list_of_best_observed_x_all[idx].append(best_observed_x)
+                print(f'trial {trial}, {choice}:', list_of_best_observed_value_all[idx][-1])
 
         return list_of_best_observed_x_all, list_of_best_observed_value_all
 
@@ -749,18 +768,18 @@ class QNN_BO():
         fig, ax = plt.subplots(1, 1, figsize=(8, 6))
         for label, best_observed_all in to_plot.items():
             y = np.asarray(best_observed_all)
-            #ax.errorbar(iters, y.mean(axis=0), yerr=ci(y), label=label, linewidth=1.5)
             mean_y = y.mean(axis=0)
             conf = ci(y)
 
-            ax.plot(iters, mean_y, linewidth=1.5, label=label)
-            ax.fill_between(iters, (mean_y - conf), (mean_y + conf), alpha=.1)
+            ax.errorbar(iters, mean_y, yerr=conf, errorevery=self.N_BATCH*self.BATCH_SIZE // 5, label=label, alpha=.75, fmt=':', capsize=3, capthick=1, linewidth=2)
+
+            #ax.plot(iters, mean_y, linewidth=1.5, label=label)
+            ax.fill_between(iters, (mean_y - conf), (mean_y + conf), alpha=.05)
             print(label, mean_y)
 
-
-        #plt.plot([0, self.N_BATCH * self.BATCH_SIZE], [1] * 2, 'k', linestyle='--', label="true best objective", linewidth=2)
-        plt.axhline(y=1., color='k', linestyle='--', linewidth=2)
-        ax.set_ylim(top=1.05, bottom=0.45)
+        if self.objective_type != 'qgan':
+            plt.axhline(y=1., color='k', linestyle='--', linewidth=2)
+            ax.set_ylim(top=1.05, bottom=0.45)
 
         ax.xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
 
@@ -773,23 +792,27 @@ class QNN_BO():
         plt.show()
 
     def plot_ansatz(self, to_plot_ansatz):
+        if self.objective_type == 'maxcut':
+            import networkx as nx
+            G = self.objective.graphs[0]
+            pos = nx.spring_layout(G)  # pos = nx.nx_agraph.graphviz_layout(G)
+            nx.draw_networkx(G, pos)
+            labels = nx.get_edge_attributes(G, 'weight')
+            nx.draw_networkx_edge_labels(G, pos, edge_labels=labels)
+
         print(to_plot_ansatz)
         for label, best_observed_x_trials in to_plot_ansatz.items():
             for trial,best_observed_x in enumerate(best_observed_x_trials):
                 print(label, trial)
 
-                print(len(best_observed_x))
-
-                #for vec in best_observed_x[-1]: # Only draw the circuit from the last batch
-                    # print(np.array(vec).shape)
-                    # qc = self.vec_to_circuit(np.array(vec))
-                    # print(qc.draw())
-                    # print('-------------------------------')
 
                 for vec in best_observed_x:
                     qc = self.vec_to_circuit(np.array(vec))
                     print(qc.draw())
-                    print(self.latent_func(qc))
+                    if self.objective_type == 'qgan':
+                        print(-self.latent_func(qc))
+                    else:
+                        print(self.latent_func(qc))
                     print('----------------------------------')
 
 
@@ -797,7 +820,7 @@ if __name__ == '__main__':
     import sys
     sys.path.append('/Users/erio/Dropbox/URP project/Code/PQC_composer')
 
-    seed = 1127 #27112001
+    seed = 27112021
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.set_printoptions(precision=4)
@@ -805,19 +828,19 @@ if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dtype = torch.double
 
-    num_qubits = 2
-    MAX_OP_NODES = 6  # Maximum number of gates
-    objective_type = 'qft'  # ['qft', 'maxcut']
-    num_init_points = 10  # Number of points sampled randomly at the beginning
+    objective_type = 'qgan'  # ['qft', 'maxcut', 'qgan']
+    num_qubits = 3
+    MAX_OP_NODES = 10  # Maximum number of gates
+    num_init_points = 5  # Number of points sampled randomly at the beginning
 
-    N_TRIALS = 5  # Number of times the experiments run
-    N_BATCH = 20 # Number of batch per trial
+    N_TRIALS = 10  # Number of times the experiments run
+    N_BATCH = 25 # Number of batch per trial
     BATCH_SIZE = 1  # Number of new points being sampled in a batch
 
     MC_SAMPLES = 2048  # Number of points sampled in optimization of acquisition functions
 
     qnnbo = QNN_BO(
-        objective_type = 'qft',
+        objective_type = objective_type,
         num_qubits = num_qubits,
         MAX_OP_NODES = MAX_OP_NODES,
         N_TRIALS = N_TRIALS,
@@ -835,14 +858,11 @@ if __name__ == '__main__':
 
     list_of_best_observed_x_all, list_of_best_observed_value_all = qnnbo.optimize(bounds=bounds, acqf_choices=acqf_choices, num_init_points=num_init_points, optimizer=optimizer)
 
-    # for i in range(len(list_of_best_observed_x_all)):
-    #     print(list_of_best_observed_x_all[i][-1][-1])
-
     to_plot = dict(zip(acqf_choices, list_of_best_observed_value_all))
     to_plot_ansatz = dict(zip(acqf_choices, list_of_best_observed_x_all))
     qnnbo.plot_ansatz(to_plot_ansatz)
 
-    imgname = '_'.join([qnnbo.objective_type, str(num_qubits), str(MAX_OP_NODES), str(num_init_points), str(BATCH_SIZE), str(N_BATCH), str(N_TRIALS), *acqf_choices, optimizer, str(seed)])
+    imgname = '_'.join([objective_type, str(num_qubits), str(MAX_OP_NODES), str(num_init_points), str(BATCH_SIZE), str(N_BATCH), str(N_TRIALS), *acqf_choices, optimizer, str(seed)])
     filename = './output/' + imgname
     qnnbo.plot(to_plot, filename)
 

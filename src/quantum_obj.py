@@ -1,7 +1,6 @@
 import numpy as np
-from scipy.optimize import minimize, basinhopping
+from scipy.optimize import minimize
 
-from qiskit import QuantumCircuit
 from qiskit.circuit.library import QFT
 from qiskit.quantum_info import Statevector, Operator
 
@@ -16,6 +15,15 @@ from qiskit.transpiler.passes import RemoveResetInZeroState
 from qiskit.opflow import StateFn, OperatorStateFn, CircuitStateFn,I,X,Y,Z
 
 import networkx as nx
+
+from qiskit import QuantumCircuit, BasicAer
+from qiskit.utils import QuantumInstance, algorithm_globals
+from qiskit_machine_learning.algorithms import PyTorchDiscriminator, QGAN
+
+from torch import nn, optim
+from qiskit.algorithms.optimizers import ADAM
+
+import matplotlib.pyplot as plt
 
 class QFT_objective():
     def __init__(self, num_qubits, input_states=None):
@@ -65,11 +73,11 @@ class QFT_objective():
             initial_guess = np.random.rand(PQC.num_parameters)
             result = minimize(fidelity_obj, initial_guess)
 
-            U = Operator(PQC.bind_parameters(result.x))
-            #print([state.evolve(U) for state in input_states][:4])
-            return result.x, -result.fun
+            #return result.x, -result.fun
+            return -result.fun
         else:
-            return [], -fidelity_obj([])
+            #return [], -fidelity_obj([])
+            return -fidelity_obj([])
 
 
 class MAXCUT_objective():
@@ -156,7 +164,8 @@ class MAXCUT_objective():
         for i in range(num_graphs):
             G = G_form.copy()
             for (u, v) in G.edges():
-                G.edges[u, v]['weight'] = np.random.randint(0, 10)
+                #G.edges[u, v]['weight'] = np.random.randint(0, 10)
+                G.edges[u, v]['weight'] = np.random.rand()
             graphs.append(G)
         return graphs
 
@@ -184,25 +193,55 @@ class MAXCUT_objective():
 
         assert len(graphs) == len(hamiltonians) and len(graphs) == len(opt_cut_vals)
 
-        def obj_func(x):
-            qc = PQC.bind_parameters(x)
-            psi = CircuitStateFn(qc).to_matrix()
-            expectation_value = sum( [(psi.conj().T @ H @ psi) for H in hamiltonians] )
-            return np.real(-expectation_value) / sum_opt_cut_val
+        # def maxcut_obj(x):
+        #     # qc = PQC.bind_parameters(x)
+        #     # psi = CircuitStateFn(qc).to_matrix()
+        #     # expectation_value = sum( [(psi.conj().T @ H @ psi) for H in hamiltonians] )
+        #     # return np.real(-expectation_value) / sum_opt_cut_val
+        #
+        #     if sum_opt_cut_val == 0:
+        #         return -1.
+        #
+        #     U = Operator(PQC.bind_parameters(x))
+        #     output_state = Statevector.from_label('0'*PQC.num_qubits).evolve(U)
+        #     exp_vals = [output_state.expectation_value(Operator(H)).real for H in hamiltonians]
+        #     return np.real(-sum(exp_vals)) / sum_opt_cut_val
+        #
+        # if PQC.num_parameters > 0:
+        #     initial_guess = np.random.uniform(0,2*np.pi,PQC.num_parameters)
+        #     result = minimize(maxcut_obj, initial_guess)
+        #     return result.x, -result.fun
+        # else:
+        #     return [], -maxcut_obj([])
 
-            # U = Operator(PQC.bind_parameters(x))
-            # output_state = Statevector.from_label('0'*PQC.num_qubits).evolve(U)
-            #
-            # exp_vals = [output_state.expectation_value(H).real for H in hamiltonians]
-            # #print(exp_vals, sum_opt_cut_val, np.real(-sum(exp_vals)) / sum_opt_cut_val)
-            # return np.real(-sum(exp_vals)) / sum_opt_cut_val
+        def maxcut_obj_single(x, idx):
+            if opt_cut_vals[idx] == 0:
+                return -1.
+
+            U = Operator(PQC.bind_parameters(x))
+            output_state = Statevector.from_label('0'*PQC.num_qubits).evolve(U)
+            exp_val = output_state.expectation_value(Operator(hamiltonians[idx])).real
+            return -np.real(exp_val)
+
+        if sum_opt_cut_val == 0:
+            return 1.
 
         if PQC.num_parameters > 0:
-            initial_guess = np.random.uniform(0,2*np.pi,PQC.num_parameters)
-            result = minimize(obj_func, initial_guess)
-            return result.x, -result.fun
+            sum_exp_val = 0.
+            for idx in range(len(graphs)):
+                initial_guess = np.random.uniform(0,2*np.pi,PQC.num_parameters)
+                result = minimize(maxcut_obj_single, initial_guess, args=(idx))
+                sum_exp_val += result.fun
+            return -sum_exp_val / sum_opt_cut_val
         else:
-            return [], -obj_func([])
+            sum_exp_val = 0
+            for idx in range(len(graphs)):
+                sum_exp_val += maxcut_obj_single([],idx)
+            return -sum_exp_val / sum_opt_cut_val
+
+
+
+
 
     # def check_maxcut(self, PQC ,param, n):
     #     qc = PQC.bind_parameters(param)
@@ -238,11 +277,144 @@ class MAXCUT_objective():
         ## The former is from the circuit, the latter is the sum of (global) max cuts.
         return sum_max_cut_val, sum_opt_cut_val
 
+class QGAN_objective():
+    def __init__(self, num_qubits):
+        self.num_qubits = num_qubits
+        self.qubit_set = [self.num_qubits]
+        self.bounds = np.array([0., 2**self.num_qubits-1.])
+
+    @staticmethod
+    def generate_data(distribution_type, mu, sigma, sample_size=10000):
+        if distribution_type == 'lognormal':
+            data = np.random.lognormal(mean=mu,sigma=sigma,size=sample_size)
+        elif distribution_type == 'normal':
+            data = np.random.normal(loc=mu, scale=sigma, size=sample_size)
+        else: ## 'mixnormal'
+            assert len(mu) == len(sigma)
+            num_modes = len(mu)
+            mixture = np.random.randint(low=0, high=num_modes, size=sample_size)
+
+            data = np.zeros(sample_size)
+            for i in range(num_modes):
+                data[mixture == i] = np.random.normal(mu[i], sigma[i], sum(mixture == i))
+        return data
+
+    def set_true_distribution(self, distribution_type, mu, sigma, sample_size=10000):
+        assert distribution_type in ['lognormal', 'normal', 'mixnormal']
+        self.distribution_type = distribution_type
+        self.mu = mu
+        self.sigma = sigma
+        self.sample_size = sample_size
+        self.real_data = self.__class__.generate_data(self.distribution_type, self.mu, self.sigma, self.sample_size)
+
+
+    def optimize_qgan(self, PQC, num_epochs, batch_size, seed = 27112021):
+        algorithm_globals.random_seed = seed
+
+        # Note: The algorithm's runtime can be shortened by reducing the number of training epochs.
+        num_epochs = 200
+        # Batch size
+        batch_size = 100
+
+        # Initialize qGAN
+        qgan = QGAN(self.real_data, self.bounds, self.qubit_set, batch_size, num_epochs, snapshot_dir=None)
+        qgan.seed = 1
+        # Set quantum instance to run the quantum generator
+        quantum_instance = QuantumInstance(
+            backend=BasicAer.get_backend("statevector_simulator"), seed_transpiler=seed, seed_simulator=seed
+        )
+
+
+        # init_dist = QuantumCircuit(sum(self.qubit_set))
+        # init_dist.h(init_dist.qubits)
+
+        # Set generator's initial parameters - in order to reduce the training time
+        init_params = np.random.uniform(-0.1, 0.1, PQC.num_parameters)
+
+        #g_circuit = PQC.compose(init_dist, front=True)
+
+        qgan.set_generator(generator_circuit=PQC, generator_init_params=init_params)
+        qgan._generator._free_parameters = sorted(PQC.parameters, key=lambda p: p.name)
+        qgan._generator._optimizer = ADAM(
+            maxiter=1,
+            tol=1e-6,
+            lr=1e-3,
+            beta_1=0.7,
+            beta_2=0.99,
+            noise_factor=1e-6,
+            eps=1e-6,
+            amsgrad=True
+        )
+
+        discriminator = PyTorchDiscriminator(len(self.qubit_set))
+        discriminator._optimizer = optim.Adam(discriminator._discriminator.parameters(), lr=1e-3, amsgrad=True)
+        qgan.set_discriminator(discriminator)
+        
+        result = qgan.run(quantum_instance)
+        return -result['rel_entr']
+
+    # @staticmethod
+    # def plot_loss_functions(qgan):
+    #     # Plot progress w.r.t the generator's and the discriminator's loss function
+    #     t_steps = np.arange(len(qgan.g_loss))
+    #
+    #     fig, ax1 = plt.subplots(figsize=(7, 5))
+    #     ax2 = ax1.twinx()
+    #     plt.title("Progress in the loss function")
+    #     lns1 = ax1.plot(
+    #         t_steps, qgan.g_loss, label="Generator loss function", color="mediumvioletred", linewidth=2
+    #     )
+    #     lns2 = ax1.plot(
+    #         t_steps, qgan.d_loss, label="Discriminator loss function", color="rebeccapurple", linewidth=2
+    #     )
+    #     lns3 = ax2.plot(
+    #         t_steps, qgan.rel_entr, label='Relative Entropy', color='mediumblue', lw=4, ls=':'
+    #     )
+    #
+    #     plt.grid()
+    #     ax1.set_xlabel("time steps")
+    #     ax1.set_ylabel("loss")
+    #
+    #     ax2.set_ylabel("relative entropy")
+    #
+    #     lns = lns1+lns2+lns3
+    #     labs = [l.get_label() for l in lns]
+    #     ax1.legend(lns, labs, loc='best')
+    #
+    #     plt.show()
+
+    # def plot_distribution(self, real_distribution, qgan):
+    #
+    #     real_distribution = np.round(real_distribution)
+    #     real_distribution = real_distribution[(real_distribution >= self.bounds[0]) & (real_distribution <= self.bounds[1])]
+    #     temp = []
+    #     for i in range(int(self.bounds[1] + 1)):
+    #         temp += [np.sum(real_distribution == i)]
+    #     real_distribution = np.array(temp / sum(temp))
+    #
+    #     plt.figure(figsize=(6, 5))
+    #     plt.title("PDF")
+    #     samples_g, prob_g = qgan.generator.get_output(qgan.quantum_instance, shots=10000)
+    #     samples_g = np.array(samples_g)
+    #     samples_g = samples_g.flatten()
+    #
+    #     plt.bar(samples_g, prob_g, color="royalblue", width=0.8, label="simulation")
+    #     plt.plot(
+    #         real_distribution, "-o", label="log-normal", color="deepskyblue", linewidth=4, markersize=6
+    #     )
+    #     plt.xticks(np.arange(min(samples_g), max(samples_g) + 1, 1.0))
+    #     plt.grid()
+    #     plt.xlabel("x")
+    #     plt.ylabel("p(x)")
+    #     plt.legend(loc="best")
+    #     plt.show()
+
+
+
 
 if __name__ == '__main__':
 
 
-    from qiskit import QuantumCircuit
     from qiskit.circuit import ParameterVector
 
     # theta = ParameterVector('t',3)
