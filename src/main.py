@@ -832,6 +832,7 @@ if __name__ == '__main__':
     parser.add_argument('-S', '--BATCH_SIZE', type=int, metavar='', required=True, help='Batch size')
     parser.add_argument('-s', '--seed', type=int, metavar='', required=True, help='Seed')
     parser.add_argument('-dir', '--output_dir', type=str, metavar='', required=True, help='Output directory name')
+    parser.add_argument('-gpuid', '--gpuid', type=int, metavar='', help='Seed')
     args = parser.parse_args()
     
     objective_type = args.objective_type
@@ -850,7 +851,7 @@ if __name__ == '__main__':
     torch.manual_seed(seed)
     torch.set_printoptions(precision=4)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:{args.gpuid}" if torch.cuda.is_available() else "cpu")
     dtype = torch.double
 
     # objective_type = 'qft'  # ['qft', 'maxcut', 'qgan']
