@@ -759,9 +759,8 @@ class QNN_BO():
 
 
     def plot(self, to_plot, filename):
-        def ci(y):
-            ## Confidence interval
-            return 1.96 * y.std(axis=0) / np.sqrt(self.N_TRIALS)
+        def std(y):
+            return y.std(axis=0) / np.sqrt(self.N_TRIALS)
 
         iters = np.arange(self.N_BATCH + 1) * self.BATCH_SIZE
 
@@ -769,12 +768,12 @@ class QNN_BO():
         for label, best_observed_all in to_plot.items():
             y = np.asarray(best_observed_all)
             mean_y = y.mean(axis=0)
-            conf = ci(y)
+            error = std(y)
 
-            ax.errorbar(iters, mean_y, yerr=conf, errorevery=self.N_BATCH*self.BATCH_SIZE // 5, label=label, alpha=.75, fmt=':', capsize=3, capthick=1, linewidth=2)
+            ax.errorbar(iters, mean_y, yerr=error, errorevery=self.N_BATCH*self.BATCH_SIZE // 5, label=label, alpha=.75, fmt=':', capsize=3, capthick=1, linewidth=2)
 
             #ax.plot(iters, mean_y, linewidth=1.5, label=label)
-            ax.fill_between(iters, (mean_y - conf), (mean_y + conf), alpha=.05)
+            ax.fill_between(iters, (mean_y - error), (mean_y + error), alpha=.05)
             print(label, mean_y)
 
         if self.objective_type != 'qgan':
@@ -828,13 +827,13 @@ if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dtype = torch.double
 
-    objective_type = 'qgan'  # ['qft', 'maxcut', 'qgan']
-    num_qubits = 3
-    MAX_OP_NODES = 10  # Maximum number of gates
+    objective_type = 'qft'  # ['qft', 'maxcut', 'qgan']
+    num_qubits = 2
+    MAX_OP_NODES = 6  # Maximum number of gates
     num_init_points = 5  # Number of points sampled randomly at the beginning
 
-    N_TRIALS = 10  # Number of times the experiments run
-    N_BATCH = 25 # Number of batch per trial
+    N_TRIALS = 2  # Number of times the experiments run
+    N_BATCH =  5 # Number of batch per trial
     BATCH_SIZE = 1  # Number of new points being sampled in a batch
 
     MC_SAMPLES = 2048  # Number of points sampled in optimization of acquisition functions
@@ -860,12 +859,17 @@ if __name__ == '__main__':
 
     to_plot = dict(zip(acqf_choices, list_of_best_observed_value_all))
     to_plot_ansatz = dict(zip(acqf_choices, list_of_best_observed_x_all))
+
+    imgname = '_'.join(
+        [objective_type, str(num_qubits), str(MAX_OP_NODES), str(num_init_points), str(BATCH_SIZE), str(N_BATCH),
+         str(N_TRIALS), *acqf_choices, optimizer, str(seed)])
+    pkl_filename = './output/' + imgname + '.pkl'
+
+    with open(pkl_filename, 'wb') as f:
+        pickle.dump({'QNN':to_plot_ansatz, 'obj':to_plot}, f)
+
     qnnbo.plot_ansatz(to_plot_ansatz)
 
-    imgname = '_'.join([objective_type, str(num_qubits), str(MAX_OP_NODES), str(num_init_points), str(BATCH_SIZE), str(N_BATCH), str(N_TRIALS), *acqf_choices, optimizer, str(seed)])
     filename = './output/' + imgname
     qnnbo.plot(to_plot, filename)
 
-    pkl_filename = './output/' + imgname + '.pkl'
-    with open(pkl_filename, 'wb') as f:
-        pickle.dump({'QNN':to_plot_ansatz, 'obj':to_plot}, f)
