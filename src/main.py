@@ -466,7 +466,7 @@ class QNN_BO():
         self.MAX_OP_NODES = MAX_OP_NODES
         self.encoding_length = (self.num_qubits + 1) * self.MAX_OP_NODES
 
-        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device
         self.dtype = dtype or torch.double
 
         self.N_TRIALS = N_TRIALS
