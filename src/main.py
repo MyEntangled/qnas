@@ -224,7 +224,7 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
                     q_circs_2 = []
 
                     for i in range(weighted_dist.shape[1]):
-                        qc1 = self.decoder(vec=x1[k, q, i].detach().numpy())
+                        qc1 = self.decoder(vec=x1[k, q, i].cpu().detach().numpy())
                         qc1.vec_repr = self.encoder(qc=qc1)
                         qc1.vec_repr_bytes = qc1.vec_repr.tobytes()
                         try:
@@ -239,7 +239,7 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
                         q_circs_1.append(qc1)
 
                     for j in range(weighted_dist.shape[2]):
-                        qc2 = self.decoder(vec=x2[k, q, j].detach().numpy())
+                        qc2 = self.decoder(vec=x2[k, q, j].cpu().detach().numpy())
                         qc2.vec_repr = self.encoder(qc=qc2)
                         qc2.vec_repr_bytes = qc2.vec_repr.tobytes()
                         try:
@@ -300,7 +300,7 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
                 batch_circs_1 = []
                 batch_circs_2 = []
                 for i in range(weighted_dist.shape[1]):
-                    qc1 = self.decoder(vec=x1[k, i].detach().numpy())
+                    qc1 = self.decoder(vec=x1[k, i].cpu().detach().numpy())
                     qc1.vec_repr = self.encoder(qc=qc1)
                     qc1.vec_repr_bytes = qc1.vec_repr.tobytes()
                     try:
@@ -314,7 +314,7 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
 
                     batch_circs_1.append(qc1)
                 for j in range(weighted_dist.shape[2]):
-                    qc2 = self.decoder(vec=x2[k, j].detach().numpy())
+                    qc2 = self.decoder(vec=x2[k, j].cpu().detach().numpy())
                     qc2.vec_repr = self.encoder(qc=qc2)
                     qc2.vec_repr_bytes = qc2.vec_repr.tobytes()
                     try:
@@ -367,7 +367,7 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
             all_circuits_1 = []
             all_circuits_2 = []
             for i in range(weighted_dist.shape[0]):
-                qc1 = self.decoder(vec=x1[i].detach().numpy())
+                qc1 = self.decoder(vec=x1[i].cpu().detach().numpy())
                 qc1.vec_repr = self.encoder(qc=qc1)
                 qc1.vec_repr_bytes = qc1.vec_repr.tobytes()
                 try:
@@ -382,7 +382,7 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
                 all_circuits_1.append(qc1)
 
             for j in range(weighted_dist.shape[1]):
-                qc2 = self.decoder(vec=x2[j].detach().numpy())
+                qc2 = self.decoder(vec=x2[j].cpu().detach().numpy())
                 qc2.vec_repr = self.encoder(qc=qc2)
                 qc2.vec_repr_bytes = qc2.vec_repr.tobytes()
                 try:
@@ -484,7 +484,7 @@ class QNN_BO():
         Objective function that decode X into circuit and pass it to a training task.
         """
         latent_func_values = []
-        for enc in X.detach().numpy():
+        for enc in X.cpu().detach().numpy():
             qc = self.vec_to_circuit(vec=enc)
             latent_func_values.append(self.latent_func(qc))
         #return latent_func_values
@@ -580,7 +580,7 @@ class QNN_BO():
         #print(candidates.shape)
 
         # observe new values
-        new_x = unnormalize(candidates.detach(), bounds=bounds)
+        new_x = unnormalize(candidates.cpu().detach(), bounds=bounds)
 
         train_obj = self.obj_func(X=new_x)
         #train_obj = torch.as_tensor(train_obj, device=self.device, dtype=self.dtype).unsqueeze(-1)
