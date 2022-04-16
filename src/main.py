@@ -560,15 +560,17 @@ class QNN_BO():
             return y
 
         candidates = torch.empty(size=(self.BATCH_SIZE, self.encoding_length), device=self.device, dtype=self.dtype)
+        bounds0 = bounds[0].cpu().detach().numpy()
+        bounds1 = bounds[1].cpu().detach().numpy()
 
         for i in range(self.BATCH_SIZE):
-            with torch.no_grad():
-                # get initial condition for L-BFGS-B in numpy form
-                # note that L-BFGS-B expects a different shape (no explicit q-batch dimension)
-                #x0 = np.random.normal(loc=0.5,scale=0.4,size=self.encoding_length).clip(bounds[0].numpy(), bounds[1].numpy())
-                x0 = np.random.rand(self.encoding_length).clip(bounds[0].cpu().detach().numpy(), bounds[1].cpu().detach().numpy())
-                res = minimize(fun=neg_acq_func, x0=x0, method='L-BFGS-B', bounds=np.array(list(zip(bounds[0].cpu().detach().numpy(), bounds[1].cpu().detach().numpy()))))
-                candidates[i] = torch.from_numpy(res.x).to(candidates)
+            # get initial condition for L-BFGS-B in numpy form
+            # note that L-BFGS-B expects a different shape (no explicit q-batch dimension)
+            x0 = np.random.rand(self.encoding_length).clip(bounds0, bounds1)
+            breakpoint()
+            res = minimize(fun=neg_acq_func, x0=x0, method='L-BFGS-B', bounds=np.array(list(zip(bounds0, bounds1))))
+            breakpoint()
+            candidates[i] = torch.from_numpy(res.x).to(candidates)
         return candidates
 
     ## Helper function that performs essential BO steps
