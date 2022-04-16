@@ -35,6 +35,8 @@ from matplotlib import ticker
 
 import pickle
 
+import argparse
+
 import warnings
 warnings.filterwarnings('ignore', category=BadInitialCandidatesWarning)
 warnings.filterwarnings('ignore', category=RuntimeWarning)
@@ -534,7 +536,7 @@ class QNN_BO():
             covar_module = CircuitDistKernel(encoder=self.circuit_to_vec,
                                              decoder=self.vec_to_circuit,
                                              num_qubits=self.num_qubits,
-                                             MAX_OP_NODES=MAX_OP_NODES,
+                                             MAX_OP_NODES=max_op_nodes,
                                              nu_list=[0.1, 0.2, 0.4, 0.8],
                                              device=self.device,
                                              dtype=self.dtype,
@@ -817,9 +819,35 @@ class QNN_BO():
 
 if __name__ == '__main__':
     import sys
-    sys.path.append('/Users/erio/Dropbox/URP project/Code/PQC_composer')
+    import os
+    dir = os.getcwd()
+    sys.path.append(dir)
+    #sys.path.append('/Users/erio/Dropbox/URP project/Code/PQC_composer')
 
-    seed = 27112021
+    parser = argparse.ArgumentParser(description='Quantum Neural Architecture Search')
+    parser.add_argument('-obj', '--objective_type', type=str, metavar='', required=True, help='Objective type')
+    parser.add_argument('-n', '--num_qubits', type=int, metavar='', required=True, help='Number of qubits')
+    parser.add_argument('-no', '--max_op_nodes', type=int, metavar='', required=True, help='Maximum number of gates')
+    parser.add_argument('-init', '--num_init_points', type=int, metavar='', required=True, help='Number of initial points')
+    parser.add_argument('-T', '--N_TRIALS', type=int, metavar='', required=True, help='Number of trials')
+    parser.add_argument('-B', '--N_BATCH', type=int, metavar='', required=True, help='Number of batches per trial')
+    parser.add_argument('-S', '--BATCH_SIZE', type=int, metavar='', required=True, help='Batch size')
+    parser.add_argument('-s', '--seed', type=int, metavar='', required=True, help='Seed')
+    parser.add_argument('-dir', '--output_dir', type=str, metavar='', required=True, help='Output directory name')
+    args = parser.parse_args()
+    
+    objective_type = args.objective_type
+    num_qubits = args.num_qubits
+    max_op_nodes = args.max_op_nodes
+    num_init_points = args.num_init_points
+    N_TRIALS = args.N_TRIALS
+    N_BATCH = args.N_BATCH
+    BATCH_SIZE = args.BATCH_SIZE
+    seed = args.seed
+    output_dir = args.output_dir
+
+
+    # seed = 27112021
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.set_printoptions(precision=4)
@@ -827,28 +855,28 @@ if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dtype = torch.double
 
-    objective_type = 'qft'  # ['qft', 'maxcut', 'qgan']
-    num_qubits = 2
-    MAX_OP_NODES = 6  # Maximum number of gates
-    num_init_points = 5  # Number of points sampled randomly at the beginning
-
-    N_TRIALS = 2  # Number of times the experiments run
-    N_BATCH =  5 # Number of batch per trial
-    BATCH_SIZE = 1  # Number of new points being sampled in a batch
+    # objective_type = 'qft'  # ['qft', 'maxcut', 'qgan']
+    # num_qubits = 2
+    # max_op_nodes = 6  # Maximum number of gates
+    # num_init_points = 5  # Number of points sampled randomly at the beginning
+    # 
+    # N_TRIALS = 2  # Number of times the experiments run
+    # N_BATCH = 5 # Number of batch per trial
+    # BATCH_SIZE = 1  # Number of new points being sampled in a batch
 
     MC_SAMPLES = 2048  # Number of points sampled in optimization of acquisition functions
 
     qnnbo = QNN_BO(
         objective_type = objective_type,
         num_qubits = num_qubits,
-        MAX_OP_NODES = MAX_OP_NODES,
+        MAX_OP_NODES = max_op_nodes,
         N_TRIALS = N_TRIALS,
         N_BATCH = N_BATCH,
         BATCH_SIZE = BATCH_SIZE,
         MC_SAMPLES = MC_SAMPLES
     )
 
-    encoding_length = (num_qubits + 1) * MAX_OP_NODES
+    encoding_length = (num_qubits + 1) * max_op_nodes
     bounds = torch.tensor([[0.] * encoding_length, [1.0] * encoding_length], device=device, dtype=dtype)
 
 
@@ -861,15 +889,15 @@ if __name__ == '__main__':
     to_plot_ansatz = dict(zip(acqf_choices, list_of_best_observed_x_all))
 
     imgname = '_'.join(
-        [objective_type, str(num_qubits), str(MAX_OP_NODES), str(num_init_points), str(BATCH_SIZE), str(N_BATCH),
+        [objective_type, str(num_qubits), str(max_op_nodes), str(num_init_points), str(BATCH_SIZE), str(N_BATCH),
          str(N_TRIALS), *acqf_choices, optimizer, str(seed)])
-    pkl_filename = './output/' + imgname + '.pkl'
+    pkl_filename = './' + output_dir + '/' + imgname + '.pkl'
 
     with open(pkl_filename, 'wb') as f:
         pickle.dump({'QNN':to_plot_ansatz, 'obj':to_plot}, f)
 
     qnnbo.plot_ansatz(to_plot_ansatz)
 
-    filename = './output/' + imgname
+    filename = './' + output_dir + '/' + imgname
     qnnbo.plot(to_plot, filename)
 
