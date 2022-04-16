@@ -577,10 +577,8 @@ class QNN_BO():
         # optimize
         candidates = self.lbfgsb_optimize_acqf(acq_func=acq_func, bounds=bounds)
 
-        #print(candidates.shape)
-
         # observe new values
-        new_x = unnormalize(candidates.cpu().detach(), bounds=bounds)
+        new_x = unnormalize(candidates, bounds=bounds)
 
         train_obj = self.obj_func(X=new_x)
         #train_obj = torch.as_tensor(train_obj, device=self.device, dtype=self.dtype).unsqueeze(-1)
