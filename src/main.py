@@ -851,7 +851,7 @@ if __name__ == '__main__':
     torch.manual_seed(seed)
     torch.set_printoptions(precision=4)
 
-    device = torch.device("cuda:{args.gpuid}" if torch.cuda.is_available() else "cpu")
+    device = torch.device(f"cuda:{args.gpuid}" if torch.cuda.is_available() else "cpu")
     dtype = torch.double
 
     # objective_type = 'qft'  # ['qft', 'maxcut', 'qgan']
