@@ -14,9 +14,9 @@ from QuOTMANN.gate_info import SINGLE_QUBIT_DETERMINISTIC_GATES, \
 import pickle
 import os
 
-#y_path = os.getcwd()
-#PATH_TO_SHAPE_DIST = os.path.join(my_path, '../gate_distance/all_shape_distances.pkl')
-#PATH_TO_CORE_DIST = os.path.join(my_path, '../gate_distance/all_core_distances.pkl')
+my_path = os.getcwd()
+PATH_TO_SHAPE_DIST = os.path.join(my_path, '../gate_distance/all_shape_distances.pkl')
+PATH_TO_CORE_DIST = os.path.join(my_path, '../gate_distance/all_core_distances.pkl')
 
 def label_mismatch_cost_matrix(PQC_1, PQC_2):
     assert PQC_1.num_qubits == PQC_2.num_qubits, "Two quantum circuits must have the same number of qubits."

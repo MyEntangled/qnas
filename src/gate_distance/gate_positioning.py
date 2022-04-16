@@ -4,6 +4,9 @@ from qiskit.dagcircuit.dagnode import DAGNode
 
 import numpy as np
 from qiskit import QuantumCircuit
+
+import sys
+sys.path.append('/Users/erio/Dropbox/URP project/Code/PQC_composer')
 from QuOTMANN.gate_info import SINGLE_QUBIT_DETERMINISTIC_GATES, SINGLE_QUBIT_VARIATIONAL_GATES, TWO_QUBIT_DETERMINISTIC_GATES, TWO_QUBIT_VARIATIONAL_GATES, ADMISSIBLE_GATES, DIRECTED_GATES, UNITARY
 
 def _append_to_positions(positioning:dict, V1:str, V2:str, num_qubits:int, pos:str, qargs:List, ignore_warning=True):

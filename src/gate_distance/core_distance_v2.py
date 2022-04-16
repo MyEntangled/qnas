@@ -3,6 +3,8 @@ import scipy.linalg
 from qiskit import QuantumCircuit
 import qiskit.quantum_info as qi
 
+import sys
+sys.path.append('/Users/erio/Dropbox/URP project/Code/PQC_composer')
 import gate_positioning
 from QuOTMANN.gate_info import SINGLE_QUBIT_DETERMINISTIC_GATES, SINGLE_QUBIT_VARIATIONAL_GATES, TWO_QUBIT_DETERMINISTIC_GATES, TWO_QUBIT_VARIATIONAL_GATES, ADMISSIBLE_GATES, DIRECTED_GATES, UNITARY
 
