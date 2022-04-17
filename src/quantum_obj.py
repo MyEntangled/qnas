@@ -27,6 +27,7 @@ import matplotlib.pyplot as plt
 
 class QFT_objective():
     def __init__(self, num_qubits, input_states=None):
+        self.objective_type = 'qft'
         self.num_qubits = num_qubits
         if input_states is None:
             self.input_states = [Statevector(state) for state in MUBs.get_anchor_states(num_qubits)]
@@ -82,6 +83,7 @@ class QFT_objective():
 
 class MAXCUT_objective():
     def __init__(self, graphs=None, num_graphs=None, num_nodes=None, num_edges=None):
+        self.objective_type = 'maxcut'
         self.graphs = graphs or self.generate_random_graphs(num_graphs, num_nodes, num_edges=num_edges)
         self.hamiltonians = [self.maxcut_hamiltonian(G) for G in self.graphs]
         self.opt_cut_vals = [self.classical_maxcut(G)[0] for G in self.graphs]
@@ -279,6 +281,7 @@ class MAXCUT_objective():
 
 class QGAN_objective():
     def __init__(self, num_qubits):
+        self.objective_type = 'qgan'
         self.num_qubits = num_qubits
         self.qubit_set = [self.num_qubits]
         self.bounds = np.array([0., 2**self.num_qubits-1.])

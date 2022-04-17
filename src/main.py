@@ -1,10 +1,12 @@
 import numpy as np
 import torch
 import gpytorch
+import copy
 
 from embedding import qc_embedding
 from QuOTMANN import optimal_transport, structural_cost
 from quantum_obj import QFT_objective, MAXCUT_objective, QGAN_objective
+import blackbox
 
 from botorch.models.gpytorch import GPyTorchModel
 from botorch.models import SingleTaskGP
@@ -71,14 +73,6 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
         self.register_parameter(
             name='raw_alphanorm', parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, 1), requires_grad=True)
         )
-
-        # for i in range(self.num_str_weights):
-        #     self.register_parameter(
-        #         name='raw_beta_'+str(i), parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, 1, 1))
-        #     )
-        #     self.register_parameter(
-        #         name='raw_betanorm_'+str(i), parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, 1, 1))
-        #     )
         self.register_parameter(
             name='raw_beta', parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, len(nu_list)), requires_grad=True)
         )
@@ -101,9 +95,6 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
         # register the constraints
         self.register_constraint("raw_alpha", alpha_constraint)
         self.register_constraint("raw_alphanorm", alphanorm_constraint)
-        # for i in range(self.num_str_weights):
-        #     self.register_constraint("raw_beta_"+str(i), beta_constraints[i])
-        #     self.register_constraint("raw_betanorm_"+str(i), betanorm_constraints[i])
         self.register_constraint('raw_beta', beta_constraints)
         self.register_constraint('raw_betanorm', betanorm_constraints)
 
@@ -127,11 +118,6 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
             self.register_prior("alpha_prior", alpha_prior, lambda m: m.alpha, lambda m,v: m._set_alpha)
         if alphanorm_prior is not None:
             self.register_prior("alphanorm_prior", alphanorm_prior, lambda m: m.alphanorm, lambda m,v: m._set_alphanorm)
-        # for i in range(self.num_str_weights):
-        #     if beta_priors[i] is not None:
-        #         self.register_prior("beta_prior_"+str(i), beta_priors[i], lambda m: m.beta[i], lambda m, v: m._set_beta(idx=i,val=v))
-        #     if betanorm_priors is not None:
-        #         self.register_prior("betanorm_prior_"+str(i), betanorm_priors[i], lambda m: m.betanorm[i], lambda m, v: m._set_betanorm(idx=i,val=v))
         if beta_priors is not None:
             self.register_prior('beta_priors', beta_priors, lambda m: m.beta, lambda m,v: m._set_beta)
         if betanorm_priors is not None:
@@ -146,14 +132,6 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
     def alphanorm(self):
         # when accessing the parameter, apply the constraint transform
         return self.raw_alphanorm_constraint.transform(self.raw_alphanorm)
-
-    # def beta(self,idx):
-    #     # when accessing the parameter, apply the constraint transform
-    #     return getattr(self, f"raw_beta_{idx}_constraint").transform(getattr(self, f"raw_betanorm_{idx}"))
-    #
-    # def betanorm(self,idx):
-    #     # when accessing the parameter, apply the constraint transform
-    #     return getattr(self, f"raw_betanorm_{idx}_constraint").transform(getattr(self, f"raw_betanorm_{idx}"))
     @property
     def beta(self):
         return self.raw_beta_constraint.transform(self.raw_beta)
@@ -186,17 +164,6 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
         # when setting the paramater, transform the actual value to a raw one by applying the inverse transform
         self.initialize(raw_alphanorm=self.raw_alphanorm_constraint.inverse_transform(value))
 
-    # def _set_beta(self, idx, value):
-    #     if not torch.is_tensor(value):
-    #         value = torch.as_tensor(value).to(getattr(self, f"raw_beta_{idx}"))
-    #     kwargs = {f'raw_beta_{idx}': getattr(self, "raw_beta_{idx}_constraint").inverse_transform(value)}
-    #     getattr(self, 'initialize')(**kwargs)
-    #
-    # def _set_betanorm(self, idx, value):
-    #     if not torch.is_tensor(value):
-    #         value = torch.as_tensor(value).to(getattr(self, f"raw_betanorm_{idx}"))
-    #     kwargs = {f'raw_betanorm_{idx}': getattr(self, "raw_betanorm_{idx}_constraint").inverse_transform(value)}
-    #     getattr(self, 'initialize')(**kwargs)
     def _set_beta(self, value):
         if not torch.is_tensor(value):
             value = torch.as_tensor(value).to(self.raw_beta)
@@ -209,8 +176,10 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
         self.initialize(raw_betanorm=self.raw_betanorm_constraint.inverse_transform(value))
 
     # this is the kernel function
-    def forward(self, x1, x2, diag=False, **params):
+    def forward(self, x1_tensor, x2_tensor, diag=False, **params):
         # # calculate the distance between inputs
+        x1 = x1_tensor.detach().clone()
+        x2 = x2_tensor.detach().clone()
 
         if len(x1.shape) == 4: ## (n_batchs, q, n_samples, n_features)
             is_batched = True
@@ -491,28 +460,10 @@ class QNN_BO():
         latent_func_values = []
         for enc in X.cpu().detach().numpy():
             qc = self.vec_to_circuit(vec=enc)
-            latent_func_values.append(self.latent_func(qc))
-        #return latent_func_values
+            f = blackbox.latent_func(qc, self.objective, self.num_qubits)
+            latent_func_values.append(f)
         return torch.as_tensor(latent_func_values, device=self.device, dtype=self.dtype).unsqueeze(-1)
 
-    def latent_func(self,circuit):
-        if self.objective_type == 'qft':
-            #opt_param, opt_val = self.objective.maximize_QFT_fidelity(PQC=circuit)
-            opt_val = self.objective.maximize_QFT_fidelity(PQC=circuit)
-        elif self.objective_type == 'maxcut':
-            #opt_param, opt_val = self.objective.maximize_maxcut_hamiltonian(PQC=circuit)
-            opt_val = self.objective.maximize_maxcut_hamiltonian(PQC=circuit)
-        else: # 'qgan'
-            num_epoch = self.num_qubits * 50
-            if self.num_qubits == 1:
-                self.objective.set_true_distribution(distribution_type='lognormal', mu=1., sigma=1., sample_size=1000)
-            elif self.num_qubits == 2:
-                self.objective.set_true_distribution(distribution_type='lognormal',mu=1.,sigma=1.,sample_size=1000)
-            elif self.num_qubits == 3:
-                self.objective.set_true_distribution(distribution_type='mixnormal',mu=[0.5,3.5],sigma=[1.,0.5],sample_size=1000)
-
-            opt_val = self.objective.optimize_qgan(PQC=circuit, num_epochs=num_epoch, batch_size=100)
-        return torch.as_tensor(opt_val, device=self.device, dtype=self.dtype)
 
     def vec_to_circuit(self,vec):
         return qc_embedding.enc_to_qc(num_qubits=self.num_qubits, encoding=vec)
@@ -528,7 +479,6 @@ class QNN_BO():
         train_x = draw_sobol_samples(bounds=bounds, n=n, q=1, seed=torch.randint(0, 10000, (1,)).item()).squeeze(1)
 
         train_obj = self.obj_func(X=train_x)
-        #train_obj = torch.as_tensor(train_obj, device=self.device, dtype=self.dtype).unsqueeze(-1)
 
         best_observed_value = train_obj.max().item()
         best_observed_x = train_x[torch.nonzero(torch.isclose(train_obj, train_obj.max()).ravel()).ravel()].tolist()
@@ -608,16 +558,11 @@ class QNN_BO():
 
 
         # ---------------------
+
         # generate a large number of random q-batches
         num_inits = 5
-        Xraw = bounds[0] + (bounds[1] - bounds[0]) * torch.rand(20*num_inits,self.BATCH_SIZE, self.encoding_length)
-        Yraw = acq_func(Xraw)  # evaluate the acquisition function on these q-batches
-
-        # apply the heuristic for sampling promising initial conditions
-        X = initialize_q_batch_nonneg(Xraw, Yraw, num_inits)
-        print(Xraw.shape, Yraw.shape, X.shape)
-        # we'll want gradients for the input
-
+        X = bounds[0] + (bounds[1] - bounds[0]) * torch.rand(num_inits,self.BATCH_SIZE, self.encoding_length)
+        X.to(device=self.device, dtype=self.dtype)
         X.requires_grad_(True)
 
         optimizer = torch.optim.Adam([X], lr=0.1)
@@ -626,12 +571,10 @@ class QNN_BO():
         for i in range(75):
             optimizer.zero_grad()
             # this performs batch evaluation, so this is an N-dim tensor
-            losses = - acq_func(X)  # torch.optim minimizes
-            loss = losses.sum()
+            loss = - acq_func(X).sum()  # torch.optim minimizes
             loss.backward()  # perform backward pass
+            breakpoint()
             optimizer.step()  # take a step
-            print(X.is_leaf, X.grad)
-            print(loss)
 
             # clamp values to the feasible set
             for j, (lb, ub) in enumerate(zip(*bounds)):
@@ -698,7 +641,7 @@ class QNN_BO():
 
     def bayesopt_trial(self, model, mll, train_x, train_obj, best_observed_x=[], best_observed_value=[], acqf_choice='random', candidate_set_size=10, torch_optimizer=True):
         print('Choice of acquisition function: ', acqf_choice)
-
+        #print(train_obj)
         is_random_acqf = acqf_choice == 'random'
         # run n_batch rounds of BayesOpt
         for iteration in range(1, self.N_BATCH + 1):
