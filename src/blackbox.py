@@ -1,5 +1,3 @@
-
-
 def latent_func(circuit, objective, num_qubits):
     if objective.objective_type == 'qft':
         # opt_param, opt_val = self.objective.maximize_QFT_fidelity(PQC=circuit)

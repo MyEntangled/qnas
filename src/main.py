@@ -28,6 +28,7 @@ from botorch.exceptions import BadInitialCandidatesWarning
 
 from botorch.utils.transforms import standardize, normalize, unnormalize
 from botorch.utils.sampling import draw_sobol_samples
+from botorch.utils.containers import TrainingData
 
 from gpytorch.mlls.exact_marginal_log_likelihood import ExactMarginalLogLikelihood
 from gpytorch.models import ExactGP
@@ -178,8 +179,8 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
     # this is the kernel function
     def forward(self, x1_tensor, x2_tensor, diag=False, **params):
         # # calculate the distance between inputs
-        x1 = x1_tensor.detach().clone()
-        x2 = x2_tensor.detach().clone()
+        x1 = x1_tensor.cpu().detach().clone()
+        x2 = x2_tensor.cpu().detach().clone()
 
         if len(x1.shape) == 4: ## (n_batchs, q, n_samples, n_features)
             is_batched = True
@@ -403,8 +404,8 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
 
         #print('covar module: ', x1.shape, x2.shape, K.shape, type(K))
 
-        return K
-        #return gpytorch.lazify(K)
+        #return K
+        return gpytorch.lazify(K)
 
     def circuit_distance(self, circ1, circ2, nas_cost=1, nu_list=[0.1]):
         return optimal_transport.circuit_distance_POT(PQC_1=circ1, PQC_2=circ2, nas_cost=nas_cost, nu_list=nu_list)
@@ -420,9 +421,20 @@ class GPModel(ExactGP, GPyTorchModel):
         self.to(train_X)  # make sure we're on the right device/dtype
 
     def forward(self, x):
-        mean_x = self.mean_module(x)
-        covar_x = self.covar_module(x)
+        mean_x = self.mean_module(x.cpu().detach().clone())
+        covar_x = self.covar_module(x.cpu().detach().clone())
         return MultivariateNormal(mean_x, covar_x)
+
+    @classmethod
+    def construct_inputs(cls, training_data: TrainingData, **kwargs):
+        r"""Construct kwargs for the `SimpleCustomGP` from `TrainingData` and other options.
+
+        Args:
+            training_data: `TrainingData` container with data for single outcome
+                or for multiple outcomes for batched multi-output case.
+            **kwargs: None expected for this class.
+        """
+        return {"train_X": training_data.X, "train_Y": training_data.Y}
 
 class QNN_BO():
     def __init__(self, objective_type, num_qubits, MAX_OP_NODES, N_TRIALS, N_BATCH, BATCH_SIZE, MC_SAMPLES, device=None, dtype=None):
@@ -499,7 +511,8 @@ class QNN_BO():
                                              structral_paths_dict=self.structural_paths_dict
                                              )
 
-        model = SingleTaskGP(train_x, train_obj, covar_module=covar_module, input_transform=input_transform).to(train_x)
+        #model = SingleTaskGP(train_x, train_obj, covar_module=covar_module, input_transform=input_transform).to(train_x)
+        model = GPModel(train_x, train_obj, covar_module)
 
         mll = ExactMarginalLogLikelihood(model.likelihood, model)
         # load state dict if it is passed
@@ -599,16 +612,6 @@ class QNN_BO():
 
         return new_x, train_obj
 
-    # def update_random_observations(self, best_random, num_random_points=1):
-    #     """Simulates a random policy by taking a the current list of best values observed randomly,
-    #     drawing a new random point, observing its value, and updating the list.
-    #     """
-    #     #rand_x = torch.rand(BATCH_SIZE, self.encoding_length)
-    #     rand_x = draw_sobol_samples(bounds=bounds, n=num_random_points, q=1).squeeze(1)
-    #     next_random_best = self.obj_func(X=rand_x)
-    #     next_random_best = torch.as_tensor(next_random_best, device=self.device, dtype=self.dtype).max().item()
-    #     best_random.append(max(best_random[-1], next_random_best))
-    #     return best_random
 
     def update_random_observations(self, best_random_x, best_random_value, num_random_points=1):
         """Simulates a random policy by taking a the current list of best values observed randomly,
@@ -619,12 +622,7 @@ class QNN_BO():
 
         next_random_best_value = rand_obj.max().item()
         next_random_best_x = rand_x[torch.nonzero(torch.isclose(rand_obj, rand_obj.max()).ravel()).ravel()].tolist()
-        # print(rand_x.shape, rand_obj.shape)
-        # print(rand_x[torch.nonzero(torch.isclose(rand_obj, rand_obj.max())).ravel()].shape)
-        # print("best y", best_random_value)
-        # print("next y", next_random_best_value)
-        # print("best x", best_random_x)
-        # print("next x", next_random_best_x)
+
 
         if best_random_value[-1] > next_random_best_value:
             best_random_value.append(best_random_value[-1])
