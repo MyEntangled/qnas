@@ -1,26 +1,22 @@
-import numpy as np
-import torch
-
-import copy
-
-from embedding import qc_embedding
-
-from quantum_obj import QFT_objective, MAXCUT_objective, QGAN_objective
 import blackbox
+from embedding import qc_embedding
+from quantum_obj import QFT_objective, MAXCUT_objective, QGAN_objective
 from kernel import CircuitDistKernel
 
-import botorch
+import numpy as np, torch, pickle, argparse, warnings, sys, os, matplotlib.pyplot as plt
+from matplotlib import ticker
+
+import botorch, botorch.optim.fit
 botorch.settings.propagate_grads(state=True)
+
 from botorch.models.gpytorch import GPyTorchModel
-from botorch.models import SingleTaskGP
 from botorch import fit_gpytorch_model
-import botorch.optim.fit
 
 from botorch.acquisition.monte_carlo import qExpectedImprovement, qUpperConfidenceBound
 from botorch.acquisition import ExpectedImprovement, UpperConfidenceBound
 from botorch.acquisition.max_value_entropy_search import qLowerBoundMaxValueEntropy
 
-from botorch.sampling.samplers import SobolQMCNormalSampler, IIDNormalSampler
+from botorch.sampling.samplers import SobolQMCNormalSampler
 from botorch.exceptions import BadInitialCandidatesWarning
 
 from botorch.utils.transforms import standardize, normalize, unnormalize
@@ -33,18 +29,50 @@ from gpytorch.means import ConstantMean
 from gpytorch.distributions import MultivariateNormal
 from gpytorch.likelihoods import GaussianLikelihood
 
-from scipy.optimize import minimize
-
-import matplotlib.pyplot as plt
-from matplotlib import ticker
-
-import pickle
-
-import argparse
-
-import warnings
 warnings.filterwarnings('ignore', category=BadInitialCandidatesWarning)
 warnings.filterwarnings('ignore', category=RuntimeWarning)
+sys.path.append(os.getcwd())
+
+# passing
+parser = argparse.ArgumentParser(description='Quantum Neural Architecture Search')
+parser.add_argument('-obj', '--objective_type', type=str, metavar='', required=True, help='Objective type')
+parser.add_argument('-n', '--num_qubits', type=int, metavar='', required=True, help='Number of qubits')
+parser.add_argument('-no', '--max_op_nodes', type=int, metavar='', required=True, help='Maximum number of gates')
+parser.add_argument('-init', '--num_init_points', type=int, metavar='', required=True, help='Number of initial points')
+parser.add_argument('-T', '--N_TRIALS', type=int, metavar='', required=True, help='Number of trials')
+parser.add_argument('-B', '--N_BATCH', type=int, metavar='', required=True, help='Number of batches per trial')
+parser.add_argument('-S', '--BATCH_SIZE', type=int, metavar='', required=True, help='Batch size')
+parser.add_argument('-s', '--seed', type=int, metavar='', required=True, help='Seed')
+parser.add_argument('-dir', '--output_dir', type=str, metavar='', required=True, help='Output directory name')
+parser.add_argument('-gpuid', '--gpuid', type=int, metavar='', help='GPU ID')
+args = parser.parse_args()
+
+objective_type = args.objective_type
+num_qubits = args.num_qubits
+max_op_nodes = args.max_op_nodes
+num_init_points = args.num_init_points
+N_TRIALS = args.N_TRIALS
+N_BATCH = args.N_BATCH
+BATCH_SIZE = args.BATCH_SIZE
+MC_SAMPLES = 2048  # Number of points sampled in optimization of acquisition functions
+seed = args.seed
+output_dir = args.output_dir
+device = torch.device(f"cuda:{args.gpuid}" if torch.cuda.is_available() else "cpu")
+dtype = torch.double
+
+# seeding
+np.random.seed(seed)
+torch.manual_seed(seed)
+torch.set_printoptions(precision=4)
+
+# objective_type = 'qft'  # ['qft', 'maxcut', 'qgan']
+# num_qubits = 2
+# max_op_nodes = 6  # Maximum number of gates
+# num_init_points = 5  # Number of points sampled randomly at the beginning
+# 
+# N_TRIALS = 2  # Number of times the experiments run
+# N_BATCH = 5 # Number of batch per trial
+# BATCH_SIZE = 1  # Number of new points being sampled in a batch
 
 
 class GPModel(ExactGP, GPyTorchModel):
@@ -113,7 +141,6 @@ class QNN_BO():
             latent_func_values.append(f)
         return torch.as_tensor(latent_func_values, device=self.device, dtype=self.dtype).unsqueeze(-1)
 
-
     def vec_to_circuit(self,vec):
         return qc_embedding.enc_to_qc(num_qubits=self.num_qubits, encoding=vec)
 
@@ -158,7 +185,6 @@ class QNN_BO():
         return mll, model
 
     def optimize_acqf(self, acq_func, bounds):
-        # ---------------------
         # generate a large number of random q-batches
         num_inits = 5
         X = bounds[0] + (bounds[1] - bounds[0]) * torch.rand(num_inits,self.BATCH_SIZE, self.encoding_length)
@@ -182,7 +208,6 @@ class QNN_BO():
 
         return X[0].detach().clone()
 
-
     ## Helper function that performs essential BO steps
     def optimize_acqf_and_get_observation(self, model, acq_func, bounds):
         """Optimizes the acquisition function, and returns a new candidate and a noisy observation."""
@@ -194,7 +219,6 @@ class QNN_BO():
         train_obj = self.obj_func(X=new_x)
 
         return new_x, train_obj
-
 
     def update_random_observations(self, best_random_x, best_random_value, num_random_points=1):
         """Simulates a random policy by taking a the current list of best values observed randomly,
@@ -228,20 +252,10 @@ class QNN_BO():
         for iteration in range(1, self.N_BATCH + 1):
             print('iteration: ', iteration)
 
-            # print('Model parameters BEFORE fitting:',  model.likelihood.noise, model.covar_module.alpha, model.covar_module.alphanorm, '\n',
-            #       model.covar_module.beta,'\n', model.covar_module.betanorm)
-            # for name, param in model.named_parameters():
-            #     print(name, param)
-
             if torch_optimizer:
                 fit_gpytorch_model(mll=mll, optimizer=botorch.optim.fit.fit_gpytorch_torch, max_retries=10)
             else:
                 fit_gpytorch_model(mll=mll, max_retries=10)
-
-            # print('Model parameters AFTER fitting:', model.likelihood.noise, model.covar_module.alpha, model.covar_module.alphanorm, '\n',
-            #       model.covar_module.beta,'\n', model.covar_module.betanorm)
-            # for name, param in model.named_parameters():
-            #     print(name, param)
 
             if acqf_choice == 'qEI':
                 qmc_sampler = SobolQMCNormalSampler(num_samples=self.MC_SAMPLES)
@@ -255,7 +269,6 @@ class QNN_BO():
                     model=model,
                     best_f=standardize(train_obj).max()
                 )
-
             elif acqf_choice == 'qUCB':
                 qmc_sampler = SobolQMCNormalSampler(num_samples=self.MC_SAMPLES)
                 acqf = qUpperConfidenceBound(
@@ -268,17 +281,14 @@ class QNN_BO():
                     model=model,
                     beta=0.1
                 )
-
             elif acqf_choice == 'GIBBON':
                 candidate_set = torch.rand(candidate_set_size, bounds.size(1), device=self.device, dtype=self.dtype)
                 candidate_set = bounds[0] + (bounds[1] - bounds[0]) * candidate_set
                 acqf = qLowerBoundMaxValueEntropy(model, candidate_set)
 
-
             if is_random_acqf:
                 print('update random')
                 best_observed_x, best_observed_value = self.update_random_observations(best_observed_x, best_observed_value)
-
             else: #optimize and get new observation
 
                 print('optimize acquisition function')
@@ -308,7 +318,6 @@ class QNN_BO():
                 )
 
         return best_observed_x, best_observed_value
-
 
     def optimize(self, bounds, acqf_choices, num_init_points, optimizer):
         verbose = False
@@ -348,7 +357,6 @@ class QNN_BO():
                 print(f'trial {trial}, {choice}:', list_of_best_observed_value_all[idx][-1])
 
         return list_of_best_observed_x_all, list_of_best_observed_value_all
-
 
     def plot(self, to_plot, filename):
         def std(y):
@@ -407,88 +415,36 @@ class QNN_BO():
                     print('----------------------------------')
 
 
-if __name__ == '__main__':
-    import sys
-    import os
-    dir = os.getcwd()
-    sys.path.append(dir)
-    #sys.path.append('/Users/erio/Dropbox/URP project/Code/PQC_composer')
+qnnbo = QNN_BO(
+    objective_type = objective_type,
+    num_qubits = num_qubits,
+    MAX_OP_NODES = max_op_nodes,
+    N_TRIALS = N_TRIALS,
+    N_BATCH = N_BATCH,
+    BATCH_SIZE = BATCH_SIZE,
+    MC_SAMPLES = MC_SAMPLES
+)
 
-    parser = argparse.ArgumentParser(description='Quantum Neural Architecture Search')
-    parser.add_argument('-obj', '--objective_type', type=str, metavar='', required=True, help='Objective type')
-    parser.add_argument('-n', '--num_qubits', type=int, metavar='', required=True, help='Number of qubits')
-    parser.add_argument('-no', '--max_op_nodes', type=int, metavar='', required=True, help='Maximum number of gates')
-    parser.add_argument('-init', '--num_init_points', type=int, metavar='', required=True, help='Number of initial points')
-    parser.add_argument('-T', '--N_TRIALS', type=int, metavar='', required=True, help='Number of trials')
-    parser.add_argument('-B', '--N_BATCH', type=int, metavar='', required=True, help='Number of batches per trial')
-    parser.add_argument('-S', '--BATCH_SIZE', type=int, metavar='', required=True, help='Batch size')
-    parser.add_argument('-s', '--seed', type=int, metavar='', required=True, help='Seed')
-    parser.add_argument('-dir', '--output_dir', type=str, metavar='', required=True, help='Output directory name')
-    parser.add_argument('-gpuid', '--gpuid', type=int, metavar='', help='GPU ID')
-    args = parser.parse_args()
-    
-    objective_type = args.objective_type
-    num_qubits = args.num_qubits
-    max_op_nodes = args.max_op_nodes
-    num_init_points = args.num_init_points
-    N_TRIALS = args.N_TRIALS
-    N_BATCH = args.N_BATCH
-    BATCH_SIZE = args.BATCH_SIZE
-    seed = args.seed
-    output_dir = args.output_dir
+encoding_length = (num_qubits + 1) * max_op_nodes
+bounds = torch.tensor([[0.] * encoding_length, [1.0] * encoding_length], device=device, dtype=dtype)
 
+acqf_choices = ['qEI', 'GIBBON']
+optimizer = 'torch' ## 'torch' or 'scipy'
 
-    # seed = 27112021
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.set_printoptions(precision=4)
+list_of_best_observed_x_all, list_of_best_observed_value_all = qnnbo.optimize(bounds=bounds, acqf_choices=acqf_choices, num_init_points=num_init_points, optimizer=optimizer)
 
-    device = torch.device(f"cuda:{args.gpuid}" if torch.cuda.is_available() else "cpu")
-    dtype = torch.double
+to_plot = dict(zip(acqf_choices, list_of_best_observed_value_all))
+to_plot_ansatz = dict(zip(acqf_choices, list_of_best_observed_x_all))
 
-    # objective_type = 'qft'  # ['qft', 'maxcut', 'qgan']
-    # num_qubits = 2
-    # max_op_nodes = 6  # Maximum number of gates
-    # num_init_points = 5  # Number of points sampled randomly at the beginning
-    # 
-    # N_TRIALS = 2  # Number of times the experiments run
-    # N_BATCH = 5 # Number of batch per trial
-    # BATCH_SIZE = 1  # Number of new points being sampled in a batch
+imgname = '_'.join(
+    [objective_type, str(num_qubits), str(max_op_nodes), str(num_init_points), str(BATCH_SIZE), str(N_BATCH),
+        str(N_TRIALS), *acqf_choices, optimizer, str(seed)])
+pkl_filename = './' + output_dir + '/' + imgname + '.pkl'
 
-    MC_SAMPLES = 2048  # Number of points sampled in optimization of acquisition functions
+with open(pkl_filename, 'wb') as f:
+    pickle.dump({'QNN':to_plot_ansatz, 'obj':to_plot}, f)
 
-    qnnbo = QNN_BO(
-        objective_type = objective_type,
-        num_qubits = num_qubits,
-        MAX_OP_NODES = max_op_nodes,
-        N_TRIALS = N_TRIALS,
-        N_BATCH = N_BATCH,
-        BATCH_SIZE = BATCH_SIZE,
-        MC_SAMPLES = MC_SAMPLES
-    )
+qnnbo.plot_ansatz(to_plot_ansatz)
 
-    encoding_length = (num_qubits + 1) * max_op_nodes
-    bounds = torch.tensor([[0.] * encoding_length, [1.0] * encoding_length], device=device, dtype=dtype)
-
-
-    acqf_choices = ['qEI', 'GIBBON']
-    optimizer = 'torch' ## 'torch' or 'scipy'
-
-    list_of_best_observed_x_all, list_of_best_observed_value_all = qnnbo.optimize(bounds=bounds, acqf_choices=acqf_choices, num_init_points=num_init_points, optimizer=optimizer)
-
-    to_plot = dict(zip(acqf_choices, list_of_best_observed_value_all))
-    to_plot_ansatz = dict(zip(acqf_choices, list_of_best_observed_x_all))
-
-    imgname = '_'.join(
-        [objective_type, str(num_qubits), str(max_op_nodes), str(num_init_points), str(BATCH_SIZE), str(N_BATCH),
-         str(N_TRIALS), *acqf_choices, optimizer, str(seed)])
-    pkl_filename = './' + output_dir + '/' + imgname + '.pkl'
-
-    with open(pkl_filename, 'wb') as f:
-        pickle.dump({'QNN':to_plot_ansatz, 'obj':to_plot}, f)
-
-    qnnbo.plot_ansatz(to_plot_ansatz)
-
-    filename = './' + output_dir + '/' + imgname
-    qnnbo.plot(to_plot, filename)
-
+filename = './' + output_dir + '/' + imgname
+qnnbo.plot(to_plot, filename)
