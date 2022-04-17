@@ -424,7 +424,7 @@ if __name__ == '__main__':
     parser.add_argument('-S', '--BATCH_SIZE', type=int, metavar='', required=True, help='Batch size')
     parser.add_argument('-s', '--seed', type=int, metavar='', required=True, help='Seed')
     parser.add_argument('-dir', '--output_dir', type=str, metavar='', required=True, help='Output directory name')
-    parser.add_argument('-gpuid', '--gpuid', type=int, metavar='', help='Seed')
+    parser.add_argument('-gpuid', '--gpuid', type=int, metavar='', help='GPU ID')
     args = parser.parse_args()
     
     objective_type = args.objective_type

@@ -19,3 +19,6 @@ notebooks/
 src/12theta_raw_all_shape_distances.pkl
 src/8theta_raw_all_shape_distances.pkl
 optimization_loop.py
+output/*
+output_sang/*
+output_test/*
