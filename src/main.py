@@ -8,16 +8,12 @@ from QuOTMANN import optimal_transport, structural_cost
 from quantum_obj import QFT_objective, MAXCUT_objective, QGAN_objective
 import blackbox
 
+import botorch
+botorch.settings.propagate_grads(state=True)
 from botorch.models.gpytorch import GPyTorchModel
 from botorch.models import SingleTaskGP
-
 from botorch import fit_gpytorch_model
 import botorch.optim.fit
-from botorch.optim import optimize_acqf
-from botorch.optim.initializers import initialize_q_batch_nonneg
-from botorch.generation import get_best_candidates, gen_candidates_torch
-from botorch.optim import gen_batch_initial_conditions
-
 
 from botorch.acquisition.monte_carlo import qExpectedImprovement, qUpperConfidenceBound
 from botorch.acquisition import ExpectedImprovement, UpperConfidenceBound
@@ -511,8 +507,8 @@ class QNN_BO():
                                              structral_paths_dict=self.structural_paths_dict
                                              )
 
-        #model = SingleTaskGP(train_x, train_obj, covar_module=covar_module, input_transform=input_transform).to(train_x)
-        model = GPModel(train_x, train_obj, covar_module)
+        model = SingleTaskGP(train_x, train_obj, covar_module=covar_module, input_transform=input_transform).to(train_x)
+        #model = GPModel(train_x, train_obj, covar_module)
 
         mll = ExactMarginalLogLikelihood(model.likelihood, model)
         # load state dict if it is passed
@@ -520,58 +516,8 @@ class QNN_BO():
             model.load_state_dict(state_dict)
         return mll, model
 
-    def lbfgsb_optimize_acqf(self, acq_func, bounds):
-        # def neg_acq_func(x):
-        #     X = torch.from_numpy(x).to(device=self.device, dtype=self.dtype).unsqueeze(-2)
-        #     Y = -acq_func(X)
-        #     print(Y)
-        #     y = Y.view(-1).double().cpu().detach().numpy()
-        #     return y
-        #
-        # candidates = torch.empty(size=(self.BATCH_SIZE, self.encoding_length), device=self.device, dtype=self.dtype)
-        # bounds0 = bounds[0].cpu().detach().numpy()
-        # bounds1 = bounds[1].cpu().detach().numpy()
-        #
-        # for i in range(self.BATCH_SIZE):
-        #     # get initial condition for L-BFGS-B in numpy form
-        #     # note that L-BFGS-B expects a different shape (no explicit q-batch dimension)
-        #     x0 = np.random.rand(self.encoding_length).clip(bounds0, bounds1)
-        #     print(x0)
-        #     res = minimize(fun=neg_acq_func, x0=x0, method='L-BFGS-B', bounds=np.array(list(zip(bounds0, bounds1))))
-        #     candidates[i] = torch.from_numpy(res.x).to(candidates)
-        #     print(candidates[i])
-        # return candidates
-
-
-        # ----------------------
-        #candidate = torch.empty(size=(self.BATCH_SIZE, self.encoding_length), device=self.device, dtype=self.dtype)
-        # min_loss = 1000
-        # for i in range(20):
-        #     x0 = bounds[0] + (bounds[1] - bounds[0]) * torch.rand(self.BATCH_SIZE, self.encoding_length, device=self.device, dtype=self.dtype)
-        #     x0.requires_grad_()
-        #     optimizer = torch.optim.Adam([x0])
-        #     x0_init = x0.clone()
-        #     print(x0_init)
-        #     for turn in range(75):
-        #         optimizer.zero_grad()
-        #         losses = - acq_func(x0)
-        #         loss = losses.sum()
-        #         print(loss)
-        #         loss.backward()
-        #         optimizer.step()
-        #         #x0.data.clip(bounds[0], bounds[1])
-        #         #print(loss, x0)
-        #
-        #     print((x0-x0_init).norm)
-        #     print(loss)
-        #     if loss < min_loss:
-        #         candidate = x0
-        #         min_loss = loss
-        # return candidate
-
-
+    def optimize_acqf(self, acq_func, bounds):
         # ---------------------
-
         # generate a large number of random q-batches
         num_inits = 5
         X = bounds[0] + (bounds[1] - bounds[0]) * torch.rand(num_inits,self.BATCH_SIZE, self.encoding_length)
@@ -586,7 +532,7 @@ class QNN_BO():
             # this performs batch evaluation, so this is an N-dim tensor
             loss = - acq_func(X).sum()  # torch.optim minimizes
             loss.backward()  # perform backward pass
-            breakpoint()
+            #breakpoint()
             optimizer.step()  # take a step
 
             # clamp values to the feasible set
@@ -597,14 +543,11 @@ class QNN_BO():
         return X[0].detach().clone()
 
 
-
     ## Helper function that performs essential BO steps
     def optimize_acqf_and_get_observation(self, model, acq_func, bounds):
         """Optimizes the acquisition function, and returns a new candidate and a noisy observation."""
         # optimize
-        candidates = self.lbfgsb_optimize_acqf(acq_func=acq_func, bounds=bounds)
-
-        #breakpoint()
+        candidates = self.optimize_acqf(acq_func=acq_func, bounds=bounds)
 
         # observe new values
         new_x = unnormalize(candidates, bounds=bounds)
@@ -662,11 +605,9 @@ class QNN_BO():
 
             if acqf_choice == 'qEI':
                 qmc_sampler = SobolQMCNormalSampler(num_samples=self.MC_SAMPLES)
-                #qmc_sampler = IIDNormalSampler(num_samples=100, resample=True)
                 acqf = qExpectedImprovement(
                     model=model,
-                    #best_f=standardize(train_obj).max(),
-                    best_f = train_obj.max(),
+                    best_f = standardize(train_obj).max(),
                     sampler=qmc_sampler
                 )
             elif acqf_choice == 'EI':
@@ -702,7 +643,6 @@ class QNN_BO():
 
                 print('optimize acquisition function')
                 new_x, new_obj = self.optimize_acqf_and_get_observation(model=model, acq_func=acqf, bounds=bounds)
-                #print("New candidates", new_obj.shape)
 
                 # update training points
                 train_x = torch.cat([train_x, new_x])
@@ -747,7 +687,7 @@ class QNN_BO():
             # call helper functions to generate initial training data and initialize model
             train_x_init, train_obj_init, best_observed_x_init, best_observed_value_init = self.generate_initial_data(n=num_init_points, bounds=bounds)
 
-            print('data initialization: ', train_x_init.shape, train_obj_init.shape, best_observed_x_init, best_observed_value_init)
+            print('data initialization: x shape =', train_x_init.shape, ',best init value =', best_observed_value_init)
 
             # run n_batch rounds of BayesOpt after the initial random batch
             for idx,choice in enumerate(acqf_choices):
