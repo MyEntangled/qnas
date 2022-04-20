@@ -6,15 +6,20 @@ from kernel import CircuitDistKernel
 import numpy as np, torch, pickle, argparse, warnings, sys, os, matplotlib.pyplot as plt
 from matplotlib import ticker
 
+import cma
+
 import botorch, botorch.optim.fit
 botorch.settings.propagate_grads(state=True)
 
 from botorch.models.gpytorch import GPyTorchModel
 from botorch import fit_gpytorch_model
 
+from botorch.optim.optimize import optimize_acqf
+from botorch.optim.initializers import initialize_q_batch_nonneg
+
 from botorch.acquisition.monte_carlo import qExpectedImprovement, qUpperConfidenceBound
 from botorch.acquisition import ExpectedImprovement, UpperConfidenceBound
-from botorch.acquisition.max_value_entropy_search import qLowerBoundMaxValueEntropy
+from botorch.acquisition.max_value_entropy_search import qLowerBoundMaxValueEntropy, qMaxValueEntropy
 
 from botorch.sampling.samplers import SobolQMCNormalSampler
 from botorch.exceptions import BadInitialCandidatesWarning
@@ -135,14 +140,15 @@ class QNN_BO():
         Objective function that decode X into circuit and pass it to a training task.
         """
         latent_func_values = []
-        for enc in X.cpu().detach().numpy():
+        #for enc in X.cpu().detach().numpy():
+        for enc in X:
             qc = self.vec_to_circuit(vec=enc)
             f = blackbox.latent_func(qc, self.objective, self.num_qubits)
             latent_func_values.append(f)
         return torch.as_tensor(latent_func_values, device=self.device, dtype=self.dtype).unsqueeze(-1)
 
     def vec_to_circuit(self,vec):
-        return qc_embedding.enc_to_qc(num_qubits=self.num_qubits, encoding=vec)
+        return qc_embedding.enc_to_qc_torch(num_qubits=self.num_qubits, encoding=vec)
 
     def circuit_to_vec(self,qc):
         return qc_embedding.qc_to_enc(qc=qc,MAX_OP_NODES=self.MAX_OP_NODES)
@@ -174,7 +180,6 @@ class QNN_BO():
                                              distance_dict=self.distance_dict,
                                              structral_paths_dict=self.structural_paths_dict
                                              )
-
         #model = SingleTaskGP(train_x, train_obj, covar_module=covar_module, input_transform=input_transform).to(train_x)
         model = GPModel(train_x, train_obj, covar_module)
 
@@ -184,35 +189,103 @@ class QNN_BO():
             model.load_state_dict(state_dict)
         return mll, model
 
-    def optimize_acqf(self, acq_func, bounds):
+    def optimize_acq_func(self, acq_func, bounds, num_restarts=5, raw_samples=100):
+        def get_numerical_gradient(func, X, eps=1e-6):
+            g = torch.zeros_like(X)
+            for i in range(X.shape[-1]):
+                e = torch.zeros(X.shape[-1])
+                e[i] = 1.0
+                res = (func(X + eps * e[None, None, :]) - func(X - eps * e[None, None, :])) / (2 * eps)
+                g[:, 0, i] = res
+            return -g
+
+        min_loss = 1000
         # generate a large number of random q-batches
-        num_inits = 5
-        X = bounds[0] + (bounds[1] - bounds[0]) * torch.rand(num_inits,self.BATCH_SIZE, self.encoding_length)
-        X.to(device=self.device, dtype=self.dtype)
-        X.requires_grad_(True)
+        for _ in range(num_restarts):
+            Xraw = bounds[0] + (bounds[1] - bounds[0]) * torch.rand(raw_samples * self.BATCH_SIZE, 1, self.encoding_length)
+            Yraw = acq_func(Xraw)  # evaluate the acquisition function on these q-batches
 
-        optimizer = torch.optim.Adam([X], lr=0.1)
+            # apply the heuristic for sampling promising initial conditions
+            X = initialize_q_batch_nonneg(Xraw, Yraw, self.BATCH_SIZE)
+            #X = bounds[0] + (bounds[1] - bounds[0]) * torch.rand(num_inits,1, self.encoding_length)
+            X.to(device=self.device, dtype=self.dtype)
+            X.requires_grad_(True)
 
-        # run a basic optimization loop
-        for i in range(75):
-            optimizer.zero_grad()
-            # this performs batch evaluation, so this is an N-dim tensor
-            loss = - acq_func(X).sum()  # torch.optim minimizes
-            loss.backward()  # perform backward pass
-            optimizer.step()  # take a step
+            optimizer = torch.optim.Adam([X], lr=0.1)
 
-            # clamp values to the feasible set
-            for j, (lb, ub) in enumerate(zip(*bounds)):
-                X.data[..., j].clamp_(lb, ub)  # need to do this on the data not X itself
-            # store the optimization trajecatory
+            # run a basic optimization loop
+            with torch.no_grad():
+                for i in range(75):
+                    optimizer.zero_grad()
+                    # this performs batch evaluation, so this is an N-dim tensor
+                    loss = - acq_func(X).sum()  # torch.optim minimizes
 
-        return X[0].detach().clone()
+                    #loss.backward()  # perform backward pass
+                    numerical_grad = get_numerical_gradient(acq_func, X, 10e-6)
+                    X.grad = numerical_grad
+                    optimizer.step()  # take a step
+
+                    # clamp values to the feasible set
+                    for j, (lb, ub) in enumerate(zip(*bounds)):
+                        X.data[..., j].clamp_(lb, ub)  # need to do this on the data not X itself
+
+                if loss < min_loss:
+                    candidates = X
+                    min_loss = loss
+            #         print(min_loss)
+            # print('-----------')
+        return candidates.squeeze(1)
+
+
+    ## Zero-th order optimizer of acqf
+    def cmaes_optimize_acqf(self, acq_func, bounds):
+        """
+        Return solution candidates for the acquisition function being maximized
+        """
+        candidates = torch.empty(size=(self.BATCH_SIZE, self.encoding_length), device=self.device, dtype=self.dtype)
+
+        for i in range(self.BATCH_SIZE):
+            # get initial condition for CMAES in numpy form
+            # note that CMAES expects a different shape (no explicit q-batch dimension)
+            #x0 = np.random.normal(loc=0.5,scale=0.4,size=self.encoding_length).clip(bounds[0].numpy(), bounds[1].numpy())
+            x0 = bounds[0] + (bounds[1] - bounds[0]) * torch.rand(self.encoding_length)
+
+            # create the CMA-ES optimizer
+            es = cma.CMAEvolutionStrategy(
+                x0=x0,
+                sigma0=0.2,
+                inopts={'bounds': bounds.tolist(), 'popsize': 64, 'verbose':-1},
+            )
+
+            # speed up things by telling pytorch not to generate a compute graph in the background
+            with torch.no_grad():
+                # Run the optimization loop using the ask/tell interface -- this uses
+                # PyCMA's default settings, see the PyCMA documentation for how to modify these
+                while not es.stop():
+                    xs = es.ask()  # as for new points to evaluate
+                    # convert to Tensor for evaluating the acquisition function
+                    X = torch.tensor(np.array(xs), device=self.device, dtype=self.dtype)
+                    # evaluate the acquisition function (optimizer assumes we're minimizing)
+                    Y = - acq_func(X.unsqueeze(-2))  # acquisition functions require an explicit q-batch dimension
+                    y = Y.view(-1).double().numpy()  # convert result to numpy array
+                    #print(X.shape, Y.shape, y.shape)
+                    es.tell(xs, y)  # return the result to the optimizer
+                    for i in range(len(y)):
+                        print(xs[i], y[i])
+
+            # convert result back to a torch tensor
+            candidates[i] = torch.from_numpy(es.best.x).to(candidates)
+            best_y = - acq_func(torch.tensor(es.best.x, device=self.device, dtype=self.dtype).unsqueeze(-2))
+            print(es.best.x, best_y)
+        return candidates
 
     ## Helper function that performs essential BO steps
     def optimize_acqf_and_get_observation(self, model, acq_func, bounds):
         """Optimizes the acquisition function, and returns a new candidate and a noisy observation."""
         # optimize
-        candidates = self.optimize_acqf(acq_func=acq_func, bounds=bounds)
+        candidates = self.optimize_acq_func(acq_func=acq_func, bounds=bounds)
+        #candidates,_ = optimize_acqf(acq_function=acq_func,bounds=bounds,q=1,num_restarts=20,raw_samples=100)
+        #candidates = self.cmaes_optimize_acqf(acq_func=acq_func, bounds=bounds)
 
         # observe new values
         new_x = unnormalize(candidates, bounds=bounds)
@@ -285,6 +358,10 @@ class QNN_BO():
                 candidate_set = torch.rand(candidate_set_size, bounds.size(1), device=self.device, dtype=self.dtype)
                 candidate_set = bounds[0] + (bounds[1] - bounds[0]) * candidate_set
                 acqf = qLowerBoundMaxValueEntropy(model, candidate_set)
+            # elif acqf_choice == 'MES':
+            #     candidate_set = torch.rand(candidate_set_size, bounds.size(1), device=self.device, dtype=self.dtype)
+            #     candidate_set = bounds[0] + (bounds[1] - bounds[0]) * candidate_set
+            #     acqf = qMaxValueEntropy(model, candidate_set)
 
             if is_random_acqf:
                 print('update random')
@@ -406,12 +483,12 @@ class QNN_BO():
 
 
                 for vec in best_observed_x:
-                    qc = self.vec_to_circuit(np.array(vec))
+                    qc = self.vec_to_circuit(torch.tensor(vec))
                     print(qc.draw())
                     if self.objective_type == 'qgan':
-                        print(-self.latent_func(qc))
+                        print(-blackbox.latent_func(qc, self.objective, self.num_qubits))
                     else:
-                        print(self.latent_func(qc))
+                        print(blackbox.latent_func(qc, self.objective, self.num_qubits))
                     print('----------------------------------')
 
 
@@ -428,7 +505,7 @@ qnnbo = QNN_BO(
 encoding_length = (num_qubits + 1) * max_op_nodes
 bounds = torch.tensor([[0.] * encoding_length, [1.0] * encoding_length], device=device, dtype=dtype)
 
-acqf_choices = ['qEI', 'GIBBON']
+acqf_choices = ['random', 'EI', 'GIBBON']
 optimizer = 'torch' ## 'torch' or 'scipy'
 
 list_of_best_observed_x_all, list_of_best_observed_value_all = qnnbo.optimize(bounds=bounds, acqf_choices=acqf_choices, num_init_points=num_init_points, optimizer=optimizer)

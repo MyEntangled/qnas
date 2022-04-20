@@ -2,6 +2,8 @@ import numpy as np
 from qiskit import QuantumCircuit
 from qiskit.circuit import ParameterVector
 
+import torch
+
 from QuOTMANN.gate_info import SINGLE_QUBIT_DETERMINISTIC_GATES, \
     SINGLE_QUBIT_VARIATIONAL_GATES, \
     TWO_QUBIT_DETERMINISTIC_GATES, \
@@ -11,10 +13,14 @@ from QuOTMANN.gate_info import SINGLE_QUBIT_DETERMINISTIC_GATES, \
     UNITARY, \
     OP_NODE_DICT
 
-INV_OP_NODE_DICT = {v:k for k,v in OP_NODE_DICT.items()}
-OP_VALUES = np.array(list(OP_NODE_DICT.values()))
-OP_VALUES_1Q = np.array([val for node,val in OP_NODE_DICT.items() if node in SINGLE_QUBIT_DETERMINISTIC_GATES or node in SINGLE_QUBIT_VARIATIONAL_GATES])
+#INV_OP_NODE_DICT = {v:k for k,v in OP_NODE_DICT.items()}
+#OP_VALUES = np.array(list(OP_NODE_DICT.values()))
+#OP_VALUES_1Q = np.array([val for node,val in OP_NODE_DICT.items() if node in SINGLE_QUBIT_DETERMINISTIC_GATES or node in SINGLE_QUBIT_VARIATIONAL_GATES])
 
+INV_OP_NODE_DICT_TORCH = {v:k for k,v in OP_NODE_DICT.items()}
+OP_VALUES_TORCH = torch.tensor(list(OP_NODE_DICT.values()))
+OP_VALUES_1Q_TORCH = torch.tensor([val for node,val in OP_NODE_DICT.items() if node in SINGLE_QUBIT_DETERMINISTIC_GATES or node in SINGLE_QUBIT_VARIATIONAL_GATES])
+print(INV_OP_NODE_DICT_TORCH)
 def qc_to_enc(qc: QuantumCircuit, MAX_OP_NODES:int = None) -> np.ndarray:
     if MAX_OP_NODES is None:
         MAX_OP_NODES = qc.size()
@@ -54,10 +60,10 @@ def enc_to_qc(num_qubits: int, encoding: np.ndarray) -> QuantumCircuit:
             infolist.append('none')
         else: ## code > 0
             if num_qubits > 1:
-                closest_mark = OP_VALUES[np.abs(OP_VALUES - code).argmin()]
+                closest_mark = OP_VALUES[torch.abs(OP_VALUES - code).argmin()]
                 infolist.append(INV_OP_NODE_DICT[closest_mark])
             else:
-                closest_mark = OP_VALUES_1Q[np.abs(OP_VALUES_1Q - code).argmin()]
+                closest_mark = OP_VALUES_1Q[torch.abs(OP_VALUES_1Q - code).argmin()]
                 infolist.append(INV_OP_NODE_DICT[closest_mark])
 
 
@@ -83,6 +89,60 @@ def enc_to_qc(num_qubits: int, encoding: np.ndarray) -> QuantumCircuit:
         elif gatename in TWO_QUBIT_VARIATIONAL_GATES:
             two_highest_idx = np.argpartition(-encoding[:-1,idx],kth=1)
 
+            highest_idx = two_highest_idx[0]
+            second_highest_idx = two_highest_idx[1]
+
+            qargs = [qc.qubits[highest_idx], qc.qubits[second_highest_idx]]
+            theta.resize(len(theta) + 1)
+
+            qc.append(UNITARY[gatename](theta[-1]), qargs=qargs, cargs=[])
+
+        else: ## gatename == 'none'
+            pass
+
+    return qc
+
+def enc_to_qc_torch(num_qubits: int, encoding: torch.tensor) -> QuantumCircuit:
+    encoding = encoding.reshape(num_qubits+1, -1)
+    qc = QuantumCircuit(num_qubits)
+    theta = ParameterVector('theta',0)
+
+    infolist = [] ## list of gatenames
+    for i,code in enumerate(encoding[-1]):
+        if code <= 0:
+            infolist.append('none')
+        else: ## code > 0
+            if num_qubits > 1:
+                closest_mark = OP_VALUES_TORCH[torch.abs(OP_VALUES_TORCH - code).argmin()].item()
+                infolist.append(INV_OP_NODE_DICT_TORCH[closest_mark])
+            else:
+                closest_mark = OP_VALUES_1Q_TORCH[torch.abs(OP_VALUES_1Q_TORCH - code).argmin()].item()
+                infolist.append(INV_OP_NODE_DICT_TORCH[closest_mark])
+
+
+    for idx,gatename in enumerate(infolist):
+
+        if gatename in SINGLE_QUBIT_DETERMINISTIC_GATES:
+            qargs = [qc.qubits[torch.argmax(encoding[:-1,idx])]]
+            qc.append(UNITARY[gatename](), qargs=qargs, cargs=[])
+
+        elif gatename in SINGLE_QUBIT_VARIATIONAL_GATES:
+            qargs = [qc.qubits[torch.argmax(encoding[:-1,idx])]]
+            theta.resize(len(theta) + 1)
+            qc.append(UNITARY[gatename](theta[-1]), qargs=qargs, cargs=[])
+
+        elif gatename in TWO_QUBIT_DETERMINISTIC_GATES:
+            #two_highest_idx = np.argpartition(-encoding[:-1,idx],kth=1)
+            _, two_highest_idx = torch.topk(encoding[:-1,idx], k=2, sorted=True)
+            highest_idx = two_highest_idx[0]
+            second_highest_idx = two_highest_idx[1]
+
+            qargs = [qc.qubits[highest_idx], qc.qubits[second_highest_idx]]
+            qc.append(UNITARY[gatename](), qargs=qargs, cargs=[])
+
+        elif gatename in TWO_QUBIT_VARIATIONAL_GATES:
+            #two_highest_idx = np.argpartition(-encoding[:-1,idx],kth=1)
+            _, two_highest_idx = torch.topk(encoding[:-1, idx], k=2, sorted=True)
             highest_idx = two_highest_idx[0]
             second_highest_idx = two_highest_idx[1]
 
