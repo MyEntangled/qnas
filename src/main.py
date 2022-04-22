@@ -193,7 +193,7 @@ class QNN_BO():
         def get_numerical_gradient(func, X, eps=1e-6):
             g = torch.zeros_like(X)
             for i in range(X.shape[-1]):
-                e = torch.zeros(X.shape[-1])
+                e = torch.zeros_like(X.shape[-1])
                 e[i] = 1.0
                 res = (func(X + eps * e[None, None, :]) - func(X - eps * e[None, None, :])) / (2 * eps)
                 g[:, 0, i] = res
