@@ -202,6 +202,7 @@ class QNN_BO():
         min_loss = 1000
         # generate a large number of random q-batches
         for _ in range(num_restarts):
+            breakpoint()
             Xraw = bounds[0] + (bounds[1] - bounds[0]) * torch.rand(raw_samples * self.BATCH_SIZE, 1, self.encoding_length, device=self.device, dtype=self.dtype)
             Yraw = acq_func(Xraw)  # evaluate the acquisition function on these q-batches
 
@@ -317,7 +318,7 @@ class QNN_BO():
 
         return best_random_x, best_random_value
 
-    def bayesopt_trial(self, model, mll, train_x, train_obj, best_observed_x=[], best_observed_value=[], acqf_choice='random', candidate_set_size=10, torch_optimizer=True):
+    def bayesopt_trial(self, model, mll, train_x, train_obj, bounds, best_observed_x=[], best_observed_value=[], acqf_choice='random', candidate_set_size=10, torch_optimizer=True):
         print('Choice of acquisition function: ', acqf_choice)
         #print(train_obj)
         is_random_acqf = acqf_choice == 'random'
@@ -422,6 +423,7 @@ class QNN_BO():
                 ## best_observed_value stores the optimal obj over batchs
                 ## best_observed_x only stores the final optimal circuit(s)
                 best_observed_x, best_observed_value = self.bayesopt_trial(model, mll, train_x_init.clone(), train_obj_init.clone(),
+                                                                 bounds=bounds,
                                                                  best_observed_x=best_observed_x_init,
                                                                  best_observed_value=[best_observed_value_init],
                                                                  acqf_choice=choice,
