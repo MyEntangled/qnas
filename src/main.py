@@ -202,7 +202,6 @@ class QNN_BO():
         min_loss = 1000
         # generate a large number of random q-batches
         for _ in range(num_restarts):
-            breakpoint()
             Xraw = bounds[0] + (bounds[1] - bounds[0]) * torch.rand(raw_samples * self.BATCH_SIZE, 1, self.encoding_length, device=self.device, dtype=self.dtype)
             Yraw = acq_func(Xraw)  # evaluate the acquisition function on these q-batches
 
@@ -502,7 +501,9 @@ qnnbo = QNN_BO(
     N_TRIALS = N_TRIALS,
     N_BATCH = N_BATCH,
     BATCH_SIZE = BATCH_SIZE,
-    MC_SAMPLES = MC_SAMPLES
+    MC_SAMPLES = MC_SAMPLES,
+    device=device,
+    dtype=dtype
 )
 
 encoding_length = (num_qubits + 1) * max_op_nodes
