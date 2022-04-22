@@ -138,11 +138,8 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
         self.initialize(raw_betanorm=self.raw_betanorm_constraint.inverse_transform(value))
 
     # this is the kernel function
-    def forward(self, x1_tensor, x2_tensor, diag=False, **params):
-        # # calculate the distance between inputs
-        x1 = x1_tensor.cpu().detach().clone()
-        x2 = x2_tensor.cpu().detach().clone()
-
+    def forward(self, x1, x2, diag=False, **params):
+        # # calculate the distance between inputs 
         if len(x1.shape) == 4: ## (n_batchs, q, n_samples, n_features)
             is_batched = True
             has_q = True
