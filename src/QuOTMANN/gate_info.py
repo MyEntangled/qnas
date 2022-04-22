@@ -41,21 +41,6 @@ for gate in ADMISSIBLE_GATES:
         GATE_COMP_UNIT[gate] = 1
 
 
-# def create_node_dict(num_qubits):
-#     NODE_DICT = {}
-#     num_gates = len(ADMISSIBLE_GATES)
-#
-#     op_scalars = np.linspace(0.1,0.9, 2*num_gates+1)[1::2]
-#     for i,gate in enumerate(ADMISSIBLE_GATES):
-#         NODE_DICT[gate] = op_scalars[i]
-#
-#     in_scalars = np.linspace(0,0.1, 2*num_qubits+1)[1::2]
-#     out_scalars = np.linspace(0.9,1, 2*num_qubits+1)[1::2]
-#     for i in range(num_qubits):
-#         NODE_DICT['_'.join(['in',str(i)])] = in_scalars[i]
-#         NODE_DICT['_'.join(['out', str(i)])] = out_scalars[i]
-#     return NODE_DICT
-
 def create_op_node_dict():
     OP_NODE_DICT = {}
     num_det_ops = len(SINGLE_QUBIT_DETERMINISTIC_GATES) + len(TWO_QUBIT_DETERMINISTIC_GATES)

@@ -17,7 +17,7 @@ from QuOTMANN.gate_info import SINGLE_QUBIT_DETERMINISTIC_GATES, \
 #OP_VALUES = np.array(list(OP_NODE_DICT.values()))
 #OP_VALUES_1Q = np.array([val for node,val in OP_NODE_DICT.items() if node in SINGLE_QUBIT_DETERMINISTIC_GATES or node in SINGLE_QUBIT_VARIATIONAL_GATES])
 
-INV_OP_NODE_DICT_TORCH = {v:k for k,v in OP_NODE_DICT.items()}
+INV_OP_NODE_DICT_TORCH = {round(v,3):k for k,v in OP_NODE_DICT.items()}
 OP_VALUES_TORCH = torch.tensor(list(OP_NODE_DICT.values()))
 OP_VALUES_1Q_TORCH = torch.tensor([val for node,val in OP_NODE_DICT.items() if node in SINGLE_QUBIT_DETERMINISTIC_GATES or node in SINGLE_QUBIT_VARIATIONAL_GATES])
 print(INV_OP_NODE_DICT_TORCH)
@@ -118,10 +118,10 @@ def enc_to_qc_torch(num_qubits: int, encoding: torch.tensor) -> QuantumCircuit:
         else: ## code > 0
             if num_qubits > 1:
                 closest_mark = OP_VALUES_TORCH_dev[torch.abs(OP_VALUES_TORCH_dev - code).argmin()].item()
-                infolist.append(INV_OP_NODE_DICT_TORCH[closest_mark])
+                infolist.append(INV_OP_NODE_DICT_TORCH[round(closest_mark, 3)])
             else:
                 closest_mark = OP_VALUES_1Q_TORCH_dev[torch.abs(OP_VALUES_1Q_TORCH_dev - code).argmin()].item()
-                infolist.append(INV_OP_NODE_DICT_TORCH[closest_mark])
+                infolist.append(INV_OP_NODE_DICT_TORCH[round(closest_mark, 3)])
 
 
     for idx,gatename in enumerate(infolist):
@@ -160,24 +160,24 @@ def enc_to_qc_torch(num_qubits: int, encoding: torch.tensor) -> QuantumCircuit:
 
     return qc
 
-if __name__ == '__main__':
-    qc = QuantumCircuit(4)
-    qc.cx(0,1)
-    qc.cx(3,2)
-    qc.cx(1,2)
-    qc.cx(2,3)
-    qc.cx(1,0)
-    print(qc.draw())
-
-    encoding = qc_to_enc(qc, MAX_OP_NODES=None)
-    print(encoding.reshape(5,5))
-
-    rec_qc = enc_to_qc(4, encoding)
-
-    print(rec_qc.draw())
-
-    np.random.seed(10)
-    rand_encoding = np.random.standard_normal((5,5))
-    print(rand_encoding)
-    rand_rec_qc = enc_to_qc(4, rand_encoding)
-    print(rand_rec_qc.draw())
+# if __name__ == '__main__':
+#     qc = QuantumCircuit(4)
+#     qc.cx(0,1)
+#     qc.cx(3,2)
+#     qc.cx(1,2)
+#     qc.cx(2,3)
+#     qc.cx(1,0)
+#     print(qc.draw())
+#
+#     encoding = qc_to_enc(qc, MAX_OP_NODES=None)
+#     print(encoding.reshape(5,5))
+#
+#     rec_qc = enc_to_qc(4, encoding)
+#
+#     print(rec_qc.draw())
+#
+#     np.random.seed(10)
+#     rand_encoding = np.random.standard_normal((5,5))
+#     print(rand_encoding)
+#     rand_rec_qc = enc_to_qc(4, rand_encoding)
+#     print(rand_rec_qc.draw())

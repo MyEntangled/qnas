@@ -228,10 +228,11 @@ class QNN_BO():
                     # clamp values to the feasible set
                     for j, (lb, ub) in enumerate(zip(*bounds)):
                         X.data[..., j].clamp_(lb, ub)  # need to do this on the data not X itself
-
+                    print(loss.item())
                 if loss < min_loss:
                     candidates = X
                     min_loss = loss
+                print('----------')
             #         print(min_loss)
             # print('-----------')
         return candidates.squeeze(1)
