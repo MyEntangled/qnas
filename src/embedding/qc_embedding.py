@@ -49,60 +49,64 @@ def qc_to_enc(qc: QuantumCircuit, MAX_OP_NODES:int = None) -> np.ndarray:
 
     return encoding.ravel()
 
-def enc_to_qc(num_qubits: int, encoding: np.ndarray) -> QuantumCircuit:
-    encoding = encoding.reshape(num_qubits+1, -1)
-    qc = QuantumCircuit(num_qubits)
-    theta = ParameterVector('theta',0)
-
-    infolist = [] ## list of gatenames
-    for i,code in enumerate(encoding[-1]):
-        if code <= 0:
-            infolist.append('none')
-        else: ## code > 0
-            if num_qubits > 1:
-                closest_mark = OP_VALUES[torch.abs(OP_VALUES - code).argmin()]
-                infolist.append(INV_OP_NODE_DICT[closest_mark])
-            else:
-                closest_mark = OP_VALUES_1Q[torch.abs(OP_VALUES_1Q - code).argmin()]
-                infolist.append(INV_OP_NODE_DICT[closest_mark])
-
-
-    for idx,gatename in enumerate(infolist):
-
-        if gatename in SINGLE_QUBIT_DETERMINISTIC_GATES:
-            qargs = [qc.qubits[np.argmax(encoding[:-1,idx])]]
-            qc.append(UNITARY[gatename](), qargs=qargs, cargs=[])
-
-        elif gatename in SINGLE_QUBIT_VARIATIONAL_GATES:
-            qargs = [qc.qubits[np.argmax(encoding[:-1,idx])]]
-            theta.resize(len(theta) + 1)
-            qc.append(UNITARY[gatename](theta[-1]), qargs=qargs, cargs=[])
-
-        elif gatename in TWO_QUBIT_DETERMINISTIC_GATES:
-            two_highest_idx = np.argpartition(-encoding[:-1,idx],kth=1)
-            highest_idx = two_highest_idx[0]
-            second_highest_idx = two_highest_idx[1]
-
-            qargs = [qc.qubits[highest_idx], qc.qubits[second_highest_idx]]
-            qc.append(UNITARY[gatename](), qargs=qargs, cargs=[])
-
-        elif gatename in TWO_QUBIT_VARIATIONAL_GATES:
-            two_highest_idx = np.argpartition(-encoding[:-1,idx],kth=1)
-
-            highest_idx = two_highest_idx[0]
-            second_highest_idx = two_highest_idx[1]
-
-            qargs = [qc.qubits[highest_idx], qc.qubits[second_highest_idx]]
-            theta.resize(len(theta) + 1)
-
-            qc.append(UNITARY[gatename](theta[-1]), qargs=qargs, cargs=[])
-
-        else: ## gatename == 'none'
-            pass
-
-    return qc
+#
+# def enc_to_qc(num_qubits: int, encoding: np.ndarray) -> QuantumCircuit:
+#     encoding = encoding.reshape(num_qubits+1, -1)
+#     qc = QuantumCircuit(num_qubits)
+#     theta = ParameterVector('theta',0)
+#
+#     infolist = [] ## list of gatenames
+#     for i,code in enumerate(encoding[-1]):
+#         if code <= 0:
+#             infolist.append('none')
+#         else: ## code > 0
+#             if num_qubits > 1:
+#                 closest_mark = OP_VALUES[torch.abs(OP_VALUES - code).argmin()]
+#                 infolist.append(INV_OP_NODE_DICT[closest_mark])
+#             else:
+#                 closest_mark = OP_VALUES_1Q[torch.abs(OP_VALUES_1Q - code).argmin()]
+#                 infolist.append(INV_OP_NODE_DICT[closest_mark])
+#
+#
+#     for idx,gatename in enumerate(infolist):
+#
+#         if gatename in SINGLE_QUBIT_DETERMINISTIC_GATES:
+#             qargs = [qc.qubits[np.argmax(encoding[:-1,idx])]]
+#             qc.append(UNITARY[gatename](), qargs=qargs, cargs=[])
+#
+#         elif gatename in SINGLE_QUBIT_VARIATIONAL_GATES:
+#             qargs = [qc.qubits[np.argmax(encoding[:-1,idx])]]
+#             theta.resize(len(theta) + 1)
+#             qc.append(UNITARY[gatename](theta[-1]), qargs=qargs, cargs=[])
+#
+#         elif gatename in TWO_QUBIT_DETERMINISTIC_GATES:
+#             two_highest_idx = np.argpartition(-encoding[:-1,idx],kth=1)
+#             highest_idx = two_highest_idx[0]
+#             second_highest_idx = two_highest_idx[1]
+#
+#             qargs = [qc.qubits[highest_idx], qc.qubits[second_highest_idx]]
+#             qc.append(UNITARY[gatename](), qargs=qargs, cargs=[])
+#
+#         elif gatename in TWO_QUBIT_VARIATIONAL_GATES:
+#             two_highest_idx = np.argpartition(-encoding[:-1,idx],kth=1)
+#
+#             highest_idx = two_highest_idx[0]
+#             second_highest_idx = two_highest_idx[1]
+#
+#             qargs = [qc.qubits[highest_idx], qc.qubits[second_highest_idx]]
+#             theta.resize(len(theta) + 1)
+#
+#             qc.append(UNITARY[gatename](theta[-1]), qargs=qargs, cargs=[])
+#
+#         else: ## gatename == 'none'
+#             pass
+#
+#     return qc
 
 def enc_to_qc_torch(num_qubits: int, encoding: torch.tensor) -> QuantumCircuit:
+    OP_VALUES_TORCH_dev = OP_VALUES_TORCH.to(encoding)
+    OP_VALUES_1Q_TORCH_dev = OP_VALUES_1Q_TORCH.to(encoding)
+
     encoding = encoding.reshape(num_qubits+1, -1)
     qc = QuantumCircuit(num_qubits)
     theta = ParameterVector('theta',0)
@@ -113,10 +117,10 @@ def enc_to_qc_torch(num_qubits: int, encoding: torch.tensor) -> QuantumCircuit:
             infolist.append('none')
         else: ## code > 0
             if num_qubits > 1:
-                closest_mark = OP_VALUES_TORCH[torch.abs(OP_VALUES_TORCH - code).argmin()].item()
+                closest_mark = OP_VALUES_TORCH_dev[torch.abs(OP_VALUES_TORCH_dev - code).argmin()].item()
                 infolist.append(INV_OP_NODE_DICT_TORCH[closest_mark])
             else:
-                closest_mark = OP_VALUES_1Q_TORCH[torch.abs(OP_VALUES_1Q_TORCH - code).argmin()].item()
+                closest_mark = OP_VALUES_1Q_TORCH_dev[torch.abs(OP_VALUES_1Q_TORCH_dev - code).argmin()].item()
                 infolist.append(INV_OP_NODE_DICT_TORCH[closest_mark])
 
 

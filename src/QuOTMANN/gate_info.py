@@ -63,8 +63,8 @@ def create_op_node_dict():
     num_ops = len(ADMISSIBLE_GATES)
 
     #op_scalars = np.linspace(0,1, 2*num_ops+1)[1::2]
-    det_op_scalars = np.linspace(0.,0.1, 2*num_det_ops)[1::2]
-    var_op_scalars = np.linspace(0.1,1., 2*num_var_ops)[1::2]
+    det_op_scalars = np.linspace(0.,0.1, 2*num_det_ops+1)[1::2]
+    var_op_scalars = np.linspace(0.1,1., 2*num_var_ops+1)[1::2]
 
 
     # for i, gate in enumerate(ADMISSIBLE_GATES):

@@ -372,8 +372,8 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
 
         #print('covar module: ', x1.shape, x2.shape, K.shape, type(K))
 
-        #return K
-        return gpytorch.lazify(K)
+        return K
+        #return gpytorch.lazify(K)
 
     def circuit_distance(self, circ1, circ2, nas_cost=1, nu_list=[0.1]):
         return optimal_transport.circuit_distance_POT(PQC_1=circ1, PQC_2=circ2, nas_cost=nas_cost, nu_list=nu_list)

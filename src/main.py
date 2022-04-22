@@ -221,7 +221,7 @@ class QNN_BO():
                     loss = - acq_func(X).sum()  # torch.optim minimizes
 
                     #loss.backward()  # perform backward pass
-                    numerical_grad = get_numerical_gradient(acq_func, X, 10e-6)
+                    numerical_grad = get_numerical_gradient(acq_func, X, 1e-6)
                     X.grad = numerical_grad
                     optimizer.step()  # take a step
 
@@ -325,10 +325,11 @@ class QNN_BO():
         for iteration in range(1, self.N_BATCH + 1):
             print('iteration: ', iteration)
 
-            if torch_optimizer:
-                fit_gpytorch_model(mll=mll, optimizer=botorch.optim.fit.fit_gpytorch_torch, max_retries=10)
-            else:
-                fit_gpytorch_model(mll=mll, max_retries=10)
+            if acqf_choice != 'random':
+                if torch_optimizer:
+                    fit_gpytorch_model(mll=mll, optimizer=botorch.optim.fit.fit_gpytorch_torch, max_retries=10)
+                else:
+                    fit_gpytorch_model(mll=mll, max_retries=10)
 
             if acqf_choice == 'qEI':
                 qmc_sampler = SobolQMCNormalSampler(num_samples=self.MC_SAMPLES)
