@@ -139,7 +139,7 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
 
     # this is the kernel function
     def forward(self, x1, x2, diag=False, **params):
-        # # calculate the distance between inputs 
+        # # calculate the distance between inputs
         if len(x1.shape) == 4: ## (n_batchs, q, n_samples, n_features)
             is_batched = True
             has_q = True

@@ -202,7 +202,7 @@ class QNN_BO():
         min_loss = 1000
         # generate a large number of random q-batches
         for _ in range(num_restarts):
-            Xraw = bounds[0] + (bounds[1] - bounds[0]) * torch.rand(raw_samples * self.BATCH_SIZE, 1, self.encoding_length)
+            Xraw = bounds[0] + (bounds[1] - bounds[0]) * torch.rand(raw_samples * self.BATCH_SIZE, 1, self.encoding_length, device=self.device, dtype=self.dtype)
             Yraw = acq_func(Xraw)  # evaluate the acquisition function on these q-batches
 
             # apply the heuristic for sampling promising initial conditions
