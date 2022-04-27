@@ -367,7 +367,8 @@ class CircuitDistKernel(gpytorch.kernels.Kernel):
         if diag:
             K = torch.diagonal(K, dim1=-2, dim2=-1)
 
-        #print('covar module: ', x1.shape, x2.shape, K.shape, type(K))
+        if not diag and K.shape[-1] == K.shape[-2]:
+            print(torch.linalg.eigvalsh(K))
 
         return K
         #return gpytorch.lazify(K)

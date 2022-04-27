@@ -16,25 +16,6 @@ from typing import Union, List
 import time
 
 
-# def construct_cvx_prob(C_lmm, C_str, gate_mass_1, gate_mass_2, nas_cost):
-#     Z = cp.Variable(C_lmm.shape)
-#     nu = cp.Parameter()
-#
-#     phi_lmm = cp.sum(cp.multiply(Z,C_lmm))
-#     phi_str = cp.sum(cp.multiply(Z,C_str))
-#     phi_nas = nas_cost * (cp.sum(gate_mass_1) + cp.sum(gate_mass_2) - 2*cp.sum(Z))
-#
-#     constraints = []
-#     constraints.append(Z >= 0)
-#
-#     for i in range(len(gate_mass_1)):
-#         constraints.append( cp.sum(Z[i,:]) <= gate_mass_1[i] )
-#     for j in range(len(gate_mass_2)):
-#         constraints.append( cp.sum(Z[:,j]) <= gate_mass_2[j] )
-#
-#     objective_min = cp.Minimize(phi_lmm + phi_nas + nu * phi_str)
-#     return cp.Problem(objective_min, constraints), Z, nu
-
 def adjust_parametrized_gate_duplicates_mass(PQC, gate_mass):
     dag = circuit_to_dag(PQC)
     op_nodes = dag.op_nodes()

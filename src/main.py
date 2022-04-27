@@ -1,7 +1,10 @@
+import gpytorch.settings
+
 import blackbox
 from embedding import qc_embedding
 from quantum_obj import QFT_objective, MAXCUT_objective, QGAN_objective
 from kernel import CircuitDistKernel
+import optimize_acqf
 
 import numpy as np, torch, pickle, argparse, warnings, sys, os, matplotlib.pyplot as plt
 from matplotlib import ticker
@@ -14,7 +17,6 @@ botorch.settings.propagate_grads(state=True)
 from botorch.models.gpytorch import GPyTorchModel
 from botorch import fit_gpytorch_model
 
-from botorch.optim.optimize import optimize_acqf
 from botorch.optim.initializers import initialize_q_batch_nonneg
 
 from botorch.acquisition.monte_carlo import qExpectedImprovement, qUpperConfidenceBound
@@ -69,6 +71,8 @@ dtype = torch.double
 np.random.seed(seed)
 torch.manual_seed(seed)
 torch.set_printoptions(precision=4)
+
+
 
 # objective_type = 'qft'  # ['qft', 'maxcut', 'qgan']
 # num_qubits = 2
@@ -215,6 +219,7 @@ class QNN_BO():
 
             # run a basic optimization loop
             with torch.no_grad():
+                print('before', X)
                 for i in range(75):
                     optimizer.zero_grad()
                     # this performs batch evaluation, so this is an N-dim tensor
@@ -228,13 +233,14 @@ class QNN_BO():
                     # clamp values to the feasible set
                     for j, (lb, ub) in enumerate(zip(*bounds)):
                         X.data[..., j].clamp_(lb, ub)  # need to do this on the data not X itself
-                    print(loss.item())
+                    #rint(loss.item())
+                print('after', X)
                 if loss < min_loss:
                     candidates = X
                     min_loss = loss
                 print('----------')
-            #         print(min_loss)
-            # print('-----------')
+        #         print(min_loss)
+        # print('-----------')
         return candidates.squeeze(1)
 
 
@@ -258,6 +264,7 @@ class QNN_BO():
                 inopts={'bounds': bounds.tolist(), 'popsize': 64, 'verbose':-1},
             )
 
+
             # speed up things by telling pytorch not to generate a compute graph in the background
             with torch.no_grad():
                 # Run the optimization loop using the ask/tell interface -- this uses
@@ -280,11 +287,27 @@ class QNN_BO():
             print(es.best.x, best_y)
         return candidates
 
+    def EA_optimize_acqf(self, acq_func, bounds, timestep, num_restarts=1, raw_samples=200):
+        Y_best = 0
+        with torch.no_grad():
+            for _ in range(num_restarts):
+                #X = optimize_acqf.warm_init(acq_func, bounds, self.encoding_length, self.BATCH_SIZE, raw_samples=raw_samples)
+                X = draw_sobol_samples(bounds=bounds, n=5, q=1).squeeze(1)
+                X,Y = optimize_acqf.EA_optimize(acq_func, X, self.num_qubits, self.MAX_OP_NODES, num_iters=round(4*np.sqrt(timestep)),
+                                              num_gate_mut=15*round(np.sqrt(np.sqrt(timestep))), num_wire_mut=15*round(np.sqrt(np.sqrt(timestep))), k=5*round(np.sqrt(np.sqrt(timestep))), num_candidates=1)
+                if Y.sum() > Y_best:
+                    Y_best = Y.sum()
+                    X_best = X
+        return X_best
+
+
+
     ## Helper function that performs essential BO steps
-    def optimize_acqf_and_get_observation(self, model, acq_func, bounds):
+    def optimize_acqf_and_get_observation(self, acq_func, bounds, timestep):
         """Optimizes the acquisition function, and returns a new candidate and a noisy observation."""
         # optimize
-        candidates = self.optimize_acq_func(acq_func=acq_func, bounds=bounds)
+        candidates = self.EA_optimize_acqf(acq_func=acq_func, bounds=bounds, timestep=timestep)
+        #candidates = self.optimize_acq_func(acq_func=acq_func, bounds=bounds)
         #candidates,_ = optimize_acqf(acq_function=acq_func,bounds=bounds,q=1,num_restarts=20,raw_samples=100)
         #candidates = self.cmaes_optimize_acqf(acq_func=acq_func, bounds=bounds)
 
@@ -371,7 +394,7 @@ class QNN_BO():
             else: #optimize and get new observation
 
                 print('optimize acquisition function')
-                new_x, new_obj = self.optimize_acqf_and_get_observation(model=model, acq_func=acqf, bounds=bounds)
+                new_x, new_obj = self.optimize_acqf_and_get_observation(acq_func=acqf, bounds=bounds, timestep=iteration)
 
                 # update training points
                 train_x = torch.cat([train_x, new_x])
@@ -510,7 +533,7 @@ qnnbo = QNN_BO(
 encoding_length = (num_qubits + 1) * max_op_nodes
 bounds = torch.tensor([[0.] * encoding_length, [1.0] * encoding_length], device=device, dtype=dtype)
 
-acqf_choices = ['random', 'EI', 'GIBBON']
+acqf_choices = ['random', 'EI']
 optimizer = 'torch' ## 'torch' or 'scipy'
 
 list_of_best_observed_x_all, list_of_best_observed_value_all = qnnbo.optimize(bounds=bounds, acqf_choices=acqf_choices, num_init_points=num_init_points, optimizer=optimizer)
