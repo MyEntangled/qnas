@@ -533,7 +533,7 @@ qnnbo = QNN_BO(
 encoding_length = (num_qubits + 1) * max_op_nodes
 bounds = torch.tensor([[0.] * encoding_length, [1.0] * encoding_length], device=device, dtype=dtype)
 
-acqf_choices = ['random', 'EI']
+acqf_choices = ['random', 'EI', 'GIBBON']
 optimizer = 'torch' ## 'torch' or 'scipy'
 
 list_of_best_observed_x_all, list_of_best_observed_value_all = qnnbo.optimize(bounds=bounds, acqf_choices=acqf_choices, num_init_points=num_init_points, optimizer=optimizer)
