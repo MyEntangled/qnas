@@ -35,11 +35,11 @@ def EA_optimize(acq_func, X0, num_qubits, num_gates, num_iters, num_gate_mut, nu
     #print(f'num_iters = {num_iters}, k = {k}')
     for iter in range(num_iters):
         n = X.shape[0]
-        X = torch.tile(X, [num_gate_mut + num_wire_mut + 1, 1, 1])
+        X = torch.tile(X, [num_gate_mut + num_wire_mut + 1, 1, 1]).to(X0)
 
         to_change_gate_idx = torch.randint(0,num_gates,(n*num_gate_mut,))
         new_gate_idx = torch.multinomial(GATE_SELECT_PROB, n*num_gate_mut, replacement=True)
-        new_gate_code = OP_VALUES_TORCH[new_gate_idx]
+        new_gate_code = OP_VALUES_TORCH[new_gate_idx].to(X)
         X[torch.arange(n*num_gate_mut),-1,to_change_gate_idx] = new_gate_code
 
         to_change_wire_of_gate = torch.randint(0,num_gates,(n*num_wire_mut,))
