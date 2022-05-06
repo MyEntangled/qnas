@@ -293,9 +293,10 @@ class QNN_BO():
             for _ in range(num_restarts):
                 #X = optimize_acqf.warm_init(acq_func, bounds, self.encoding_length, self.BATCH_SIZE, raw_samples=raw_samples)
                 X = draw_sobol_samples(bounds=bounds, n=5, q=1).squeeze(1)
-                X,Y = optimize_acqf.EA_optimize(acq_func, X, self.num_qubits, self.MAX_OP_NODES, num_iters=round(4*np.sqrt(timestep)),
-                                              num_gate_mut=15*round(np.sqrt(np.sqrt(timestep))), num_wire_mut=15*round(np.sqrt(np.sqrt(timestep))), k=5*round(np.sqrt(np.sqrt(timestep))), num_candidates=1)
-                if Y.sum() > Y_best:
+                X,Y = optimize_acqf.EA_optimize(acq_func, X, self.num_qubits, self.MAX_OP_NODES, num_iters=round(10*np.sqrt(timestep)),
+                                                num_gate_mut=15*round(np.sqrt(np.sqrt(timestep))), num_wire_mut=15*round(np.sqrt(np.sqrt(timestep))),
+                                              num_offsprings=20*round(np.sqrt(np.sqrt(timestep))), k=5*round(np.sqrt(np.sqrt(timestep))), num_candidates=1)
+                if Y.sum() >= Y_best:
                     Y_best = Y.sum()
                     X_best = X
         return X_best
@@ -473,7 +474,8 @@ class QNN_BO():
             mean_y = y.mean(axis=0)
             error = std(y)
 
-            ax.errorbar(iters, mean_y, yerr=error, errorevery=self.N_BATCH*self.BATCH_SIZE // 5, label=label, alpha=.75, fmt=':', capsize=3, capthick=1, linewidth=2)
+            #ax.errorbar(iters, mean_y, yerr=error, errorevery=self.N_BATCH*self.BATCH_SIZE // 5, label=label, alpha=.75, fmt=':', capsize=3, capthick=1, linewidth=2)
+            ax.errorbar(iters, mean_y, yerr=error, label=label, alpha=.75, fmt=':', capsize=3, capthick=1, linewidth=2)
 
             #ax.plot(iters, mean_y, linewidth=1.5, label=label)
             ax.fill_between(iters, (mean_y - error), (mean_y + error), alpha=.05)
@@ -490,6 +492,7 @@ class QNN_BO():
         ax.set(xlabel='number of observations (beyond initial points)', ylabel='best objective value')
         ax.legend(loc="lower right")
         plt.grid()
+        print(filename)
         plt.savefig(filename, bbox_inches='tight')
         plt.show()
 
@@ -533,7 +536,7 @@ qnnbo = QNN_BO(
 encoding_length = (num_qubits + 1) * max_op_nodes
 bounds = torch.tensor([[0.] * encoding_length, [1.0] * encoding_length], device=device, dtype=dtype)
 
-acqf_choices = ['random', 'EI', 'GIBBON']
+acqf_choices = ['random', 'EI']
 optimizer = 'torch' ## 'torch' or 'scipy'
 
 list_of_best_observed_x_all, list_of_best_observed_value_all = qnnbo.optimize(bounds=bounds, acqf_choices=acqf_choices, num_init_points=num_init_points, optimizer=optimizer)
