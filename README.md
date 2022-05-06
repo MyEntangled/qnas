@@ -9,5 +9,8 @@ $ source shell/add_pwd_to_pythonpath.sh
 
 And then run example scripts, such as:
 ```bash
-$ python src/main.py -obj qgan -n 3 -no 9 -init 10 -T 10 -B 50 -S 1 -s 27112021 -dir ./output/ --gpuid 7
+$ python src/main.py -obj qgan -n 3 -no 12 -init 5 -T 5 -B 30 -S 1 -s 6789 -dir ./output/ --gpuid 7
+```
+```bash
+$ python src/main.py -obj qft -n 3 -no 14 -init 5 -T 5 -B 30 -S 1 -s 6789 -dir ./output/ --gpuid 7
 ```
