@@ -103,7 +103,7 @@ def EA_optimize(acq_func, X0, num_qubits, num_gates, num_iters, num_gate_mut, nu
             X2 = X[top_idx]
             Y2 = Y[top_idx]
 
-            not_top_idx = ~torch.isin(torch.arange(len(Y)), top_idx)
+            not_top_idx = ~torch.isin(torch.arange(len(Y)).to(top_idx), top_idx)
             prob = softmax(Y[not_top_idx], dim=0)
             good_idx = torch.multinomial(prob, num_samples=k//2, replacement=False)
             X1 = X[good_idx]
@@ -114,12 +114,12 @@ def EA_optimize(acq_func, X0, num_qubits, num_gates, num_iters, num_gate_mut, nu
             X = torch.cat((X1,X2))
             Y = torch.cat((Y1,Y2))
 
-            print(f'iter {iter}:', Y)
+            #print(f'iter {iter}:', Y)
         else:
             _, top_idx = torch.topk(Y,k=num_candidates)
             X = X[top_idx]
             Y = Y[top_idx]
-            print(f'iter {iter}:', Y)
+            #print(f'iter {iter}:', Y)
 
     X = X.view(num_candidates, (num_qubits+1)*num_gates)
     return X,Y
