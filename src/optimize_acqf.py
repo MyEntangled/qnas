@@ -91,7 +91,6 @@ def EA_optimize(acq_func, X0, num_qubits, num_gates, num_iters, num_gate_mut, nu
                 # print('after wire update', X[to_be_mutated & (mut_type == 1), :-1, :][0])
                 # print('indices', indices[0])
 
-        print(X.get_device())
         with gpytorch.settings.cholesky_jitter(1e-1, 1e-1, 1e-1):
             if iter == 0:
                 Y = acq_func(X.view(X.shape[0],1,(num_qubits+1)*num_gates))
@@ -109,8 +108,6 @@ def EA_optimize(acq_func, X0, num_qubits, num_gates, num_iters, num_gate_mut, nu
             good_idx = torch.multinomial(prob, num_samples=k//2, replacement=False)
             X1 = X[good_idx]
             Y1 = Y[good_idx]
-
-
 
             X = torch.cat((X1,X2))
             Y = torch.cat((Y1,Y2))
