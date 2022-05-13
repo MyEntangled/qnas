@@ -15,12 +15,15 @@ import pickle
 import os
 
 my_path = os.getcwd()
-PATH_TO_SHAPE_DIST = os.path.join(my_path, '../gate_distance/all_shape_distances.pkl')
-PATH_TO_CORE_DIST = os.path.join(my_path, '../gate_distance/all_core_distances.pkl')
+#PATH_TO_SHAPE_DIST = os.path.join(my_path, '../gate_distance/all_shape_distances.pkl')
+#PATH_TO_CORE_DIST = os.path.join(my_path, '../gate_distance/all_core_distances.pkl')
 
 def label_mismatch_cost_matrix(PQC_1, PQC_2):
     assert PQC_1.num_qubits == PQC_2.num_qubits, "Two quantum circuits must have the same number of qubits."
-    num_qubits_str = str(PQC_1.num_qubits)
+    if PQC_1.num_qubits <= 4:
+        num_qubits_str = str(PQC_1.num_qubits)
+    else:
+        num_qubits_str = '4'
 
     with open('src/gate_distance/all_shape_distances.pkl', 'rb') as f:
     # with open('/Users/trongduong/Dropbox/URP project/Code/PQC_composer/src/gate_distance/all_shape_distances.pkl', 'rb') as f:

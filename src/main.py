@@ -117,7 +117,7 @@ class QNN_BO():
         if self.objective_type == 'qft':
             self.objective = QFT_objective(num_qubits=num_qubits)
         elif self.objective_type == 'maxcut':
-            self.objective = MAXCUT_objective(num_graphs=50,num_nodes=num_qubits)
+            self.objective = MAXCUT_objective(num_graphs=10,num_nodes=num_qubits)
         else: #'qgan'
             assert num_qubits <= 3, "QGAN objective only supports <= 3 qubits; otherwise it takes a lot of time."
             self.objective = QGAN_objective(num_qubits=num_qubits)
@@ -293,9 +293,8 @@ class QNN_BO():
             for _ in range(num_restarts):
                 #X = optimize_acqf.warm_init(acq_func, bounds, self.encoding_length, self.BATCH_SIZE, raw_samples=raw_samples)
                 X = draw_sobol_samples(bounds=bounds, n=5, q=1).squeeze(1)
-                X,Y = optimize_acqf.EA_optimize(acq_func, X, self.num_qubits, self.MAX_OP_NODES, num_iters=round(10*np.sqrt(timestep)),
-                                                num_gate_mut=15*round(np.sqrt(np.sqrt(timestep))), num_wire_mut=15*round(np.sqrt(np.sqrt(timestep))),
-                                              num_offsprings=20*round(np.sqrt(np.sqrt(timestep))), k=5*round(np.sqrt(np.sqrt(timestep))), num_candidates=1)
+                X,Y = optimize_acqf.EA_optimize(acq_func, X, self.num_qubits, self.MAX_OP_NODES, num_iters=round(6*np.sqrt(timestep)),
+                                              num_offsprings=15*round(np.sqrt(np.sqrt(timestep))), k=5*round(np.sqrt(np.sqrt(timestep))), num_candidates=1)
                 if Y.sum() >= Y_best:
                     Y_best = Y.sum()
                     X_best = X
@@ -326,6 +325,7 @@ class QNN_BO():
         rand_obj = self.obj_func(X=rand_x)
 
         next_random_best_value = rand_obj.max().item()
+        print(next_random_best_value)
         next_random_best_x = rand_x[torch.nonzero(torch.isclose(rand_obj, rand_obj.max()).ravel()).ravel()].tolist()
 
 

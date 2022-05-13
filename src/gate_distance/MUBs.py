@@ -28,7 +28,7 @@ def _odd_char_MUBs(p: int, n: int):
     assert p % 2 == 1, "p should be odd for odd characteristic Galois ring."
 
     q = p**n
-    ω = np.exp(1j * 2*np.pi / p)
+    omega = np.exp(1j * 2*np.pi / p)
     bases = []
 
     standard_basis = np.hsplit(np.eye(q), q)
@@ -43,9 +43,9 @@ def _odd_char_MUBs(p: int, n: int):
         for b in range(q):
             y = a*(x**2) + b*x
             if n > 1:
-                basis.append(1./np.sqrt(q) * ω ** np.array(y.field_trace(), dtype=float))
+                basis.append(1./np.sqrt(q) * omega ** np.array(y.field_trace(), dtype=float))
             elif n == 1:
-                basis.append(1./np.sqrt(q) * ω ** np.array(y, dtype=float))
+                basis.append(1./np.sqrt(q) * omega ** np.array(y, dtype=float))
 
         bases.append(basis)
     return np.around(np.array(bases), decimals=6)
@@ -54,17 +54,28 @@ def _even_char_MUBs(p: int, n: int):
     assert p == 2, "p must be 2 for even characteristic."
 
     f = galois.conway_poly(characteristic=2, degree=n) ## generating function
+    #print(f)
     f = np.array(f.coeffs, dtype=int)
 
-    ## 4^n Elements of Galois ring GR(4,n) written as i_{n-1}*\xi^n + + i_{0}, or [i_{n-1], i_{n-2}, ..., i_{0}]
+    ## 4^n Elements of Galois ring GR(4,n) written as i_{n-1}*\xi^n + ... + i_{0}*\xi^0, or [i_{n-1], i_{n-2}, ..., i_{0}]
     ## where \xi is the primitive root of f
     GR_elements = np.array(list(map(list, itertools.product([0, 1, 2, 3], repeat=n))))
     #print(GR_elements)
 
-    zero = [0]*n
-    one = [0]*(n-1) + [1]
-    xi = [0]*(n-2) + [1] + [0]
+    for e in GR_elements[1:]:
+        order = _compute_order(e,f)
+        if order == 2**n-1:
+            xi = e
+            break
 
+
+    zero = [0]*(n)
+    one = [0]*(n-1) + [1]
+    #xi = [0]*(n-2) + [1] + [0]
+    #xi = list(f)
+    #xi[-2] = (xi[-2] + 1) % 4
+
+    #print('xi', xi)
     teichmuller_set = []
     teichmuller_set.append(zero)
 
@@ -73,18 +84,18 @@ def _even_char_MUBs(p: int, n: int):
         if i == 0:
             xi_to_the_i = one
         else:
-            #xi_to_the_i = np.polymul(teichmuller_set[-1], xi)
-            #_, xi_to_the_i = np.polydiv(xi_to_the_i, f)
             xi_to_the_i = _polymul_modulo(teichmuller_set[-1], xi, f)
         teichmuller_set.append(xi_to_the_i)
 
     teichmuller_set = np.array(teichmuller_set, dtype=int)
-
+    #print('teimuller', teichmuller_set)
     q = 2**n
+    coeff = 1. / np.sqrt(q)
     bases = []
 
-    standard_basis = np.hsplit(np.eye(q), q)
+    standard_basis = np.hsplit(np.eye(q, dtype=complex), q)
     standard_basis = [vector.squeeze() for vector in standard_basis]
+    #print(standard_basis)
     bases.append(standard_basis)
 
     for a in teichmuller_set:
@@ -93,12 +104,28 @@ def _even_char_MUBs(p: int, n: int):
             basis_vector = []
             for x in teichmuller_set:
                 y = _polymul_modulo(a+2*b, x, f)
-                basis_vector.append(1./np.sqrt(q) * np.exp(1j*2*np.pi/4 * _GR_trace(y, f, teichmuller_set)))
+
+                omega = 2*1j*np.pi/4
+                vec = coeff * np.exp(omega * _GR_trace(y,f,teichmuller_set))
+                basis_vector.append(vec)
             basis.append(basis_vector)
-        #print(np.around(np.array(basis), decimals=6))
         bases.append(basis)
     return np.array(bases)
 
+def _compute_order(e ,f):
+    #print('compute order of', e)
+    power = 0
+    e_to_power = [0]*len(e)
+    e_to_power[-1] = 1
+    while True:
+        e_to_power = _polymul_modulo(e_to_power, e, f)
+        power += 1
+        #print(e_to_power)
+        if all([term == 0 for term in e_to_power[:-1]]):
+            if e_to_power[-1] == 1:
+                return power
+            if e_to_power[-1] == 0:
+                return 'inf'
 
 
 def _polymul_modulo(u,v,f):
@@ -110,8 +137,11 @@ def _polymul_modulo(u,v,f):
     :return:
     '''
     q, r = np.polydiv(np.polymul(u,v), f)
-    r = np.pad(r, (len(f)-len(r)-1,0), 'constant')
-    #print(r)
+    ## update
+    r = [ri % 4 for ri in r]
+    #print('r_bef',r)
+    r = np.pad(r, (len(f)-len(r)-1,0), 'constant').astype(int)
+    #print('r_aft',r)
     return r
 
 def _are_polys_equal(u,v,field_cardinal):
@@ -129,16 +159,19 @@ def _frobenius_isomorphism(e, f, teichmuller_set, degree=1):
     :return:
     '''
 
-    def _two_adic_repr():
-        for i in range(len(teichmuller_set)):
-            for j in range(len(teichmuller_set)):
+    def _two_adic_repr(e, teichmuller_set):
+        #print('e', e)
+        for i in range(0,len(teichmuller_set)):
+            for j in range(0,len(teichmuller_set)):
                 # if (e == teichmuller_set[i] + 2*teichmuller_set[j]).all():
                 if _are_polys_equal(e, teichmuller_set[i] + 2 * teichmuller_set[j], field_cardinal=4):
+                    #print(i,j, teichmuller_set[i], 2*teichmuller_set[j])
                     return (i,j)
 
 
     ## e = teichmuller_set[i] + 2*teichmuller_set[j]
-    i,j = _two_adic_repr()
+    #print('teichmuller', teichmuller_set)
+    i,j = _two_adic_repr(e, teichmuller_set)
     a = teichmuller_set[i]
     b = teichmuller_set[j]
     #print(i,j, e - (a+2*b))
@@ -165,8 +198,8 @@ def _GR_trace(e, f, teichmuller_set):
 
     trace = np.zeros(shape=(n))
     for k in range(n):
-        trace += _frobenius_isomorphism(e,f,teichmuller_set,k)
-    #print(trace)
+        trace += _frobenius_isomorphism(e,f,teichmuller_set,degree=k)
+    #print('trace', trace)
     return trace[-1]
 
 def generate_anchor_states(num_qubit_list):
@@ -201,7 +234,31 @@ def get_anchor_states(num_qubits):
 
 
 if __name__ == '__main__':
-    generate_anchor_states([1,2,3,4])
+    # n = 4
+    # MUBs = _even_char_MUBs(2,n)
+    # MUBs = MUBs.reshape(-1,2**n)
+    # print(MUBs.shape)
+    # d = MUBs.shape[1]
+    # bases = np.split(MUBs, d + 1)
+    # for m, basis1 in enumerate(bases):
+    #     # check intra basis
+    #     for i, vec1 in enumerate(basis1):
+    #         for j, vec2 in enumerate(basis1):
+    #             f = abs(vec1.conj().T @ vec2) ** 2
+    #             # print(f)
+    #             assert np.isclose(f, 0.) or np.isclose(f, 1.)
+    #
+    #     # check inter basis
+    #     for n, basis2 in enumerate(bases):
+    #         if n > m:  # different basis
+    #             for i, vec1 in enumerate(basis1):
+    #                 for j, vec2 in enumerate(basis2):
+    #                     f = abs(vec1.conj().T @ vec2) ** 2
+    #                     #print(f)
+    #                     assert np.isclose(f, 1. / d)
+    # print(MUBs)
+
+    generate_anchor_states([1,2,3,4,5])
     print(get_anchor_states(1))
     print(get_anchor_states(2))
 

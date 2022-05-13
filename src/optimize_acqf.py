@@ -30,25 +30,10 @@ def warm_init(acq_func, bounds, encoding_length, batch_size, raw_samples):
 #     row_perm = row_perm.repeat(*[1 for _ in range(axis+1)], *(tensor.shape[axis+1:]))  # reformat this for the gather operation
 #     return tensor.gather(axis, row_perm)
 
-def EA_optimize(acq_func, X0, num_qubits, num_gates, num_iters, num_gate_mut, num_wire_mut, num_offsprings, k=5, num_candidates=1):
+def EA_optimize(acq_func, X0, num_qubits, num_gates, num_iters, num_offsprings, k=5, num_candidates=1):
     X = X0.squeeze(1).view(-1, num_qubits+1, num_gates)
 
     for iter in range(num_iters):
-        # n = X.shape[0]
-        # X = torch.tile(X, [num_gate_mut + num_wire_mut + 1, 1, 1]).to(X0)
-        # to_change_gate_idx = torch.randint(0,num_gates,(n*num_gate_mut,))
-        # new_gate_idx = torch.multinomial(GATE_SELECT_PROB, n*num_gate_mut, replacement=True)
-        # new_gate_code = OP_VALUES_TORCH[new_gate_idx].to(X)
-        # X[torch.arange(n*num_gate_mut),-1,to_change_gate_idx] = new_gate_code
-        #
-        # to_change_wire_of_gate = torch.randint(0,num_gates,(n*num_wire_mut,))
-        # # new_wire_config =
-        # # X[torch.arange(n*num_gate_mut, n*(num_gate_mut+num_wire_mut)), :-1, :] = new_wire_config
-        #
-        # for i in range(n*num_gate_mut, n*(num_gate_mut+num_wire_mut)):
-        #     gate_idx_whose_wire_change = torch.randint(0,num_gates,(1,)).item()
-        #     X[i,:-1,gate_idx_whose_wire_change] = X[i,:-1,gate_idx_whose_wire_change][torch.randperm(num_qubits)]
-
 
         n = X.shape[0]
         X = torch.tile(X, [num_offsprings + 1, 1, 1]).to(X0) ## Total of (num_offsprings+1)*n clones of X

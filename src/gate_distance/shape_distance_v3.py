@@ -1,5 +1,3 @@
-
-
 import numpy as np
 
 from qiskit import QuantumCircuit
@@ -180,37 +178,6 @@ def optimization_routine(spectrum_V1, spectrum_V2, tol=10e-6):
         else:
             val_prev = val
 
-def get_counter_unitary(spectrum_V1, spectrum_V2, V1, V2, qargs1, qargs2):
-    m, T, d = spectrum_V1.shape
-    num_qubits = int(np.log2(d))
-
-    qc = QuantumCircuit(num_qubits)
-    if V1 == 'rx' and V2 == 'ry':
-        print('counter unitary exists')
-        qc.rz(np.pi/2, qargs1)
-    if V1 == 'rx' and V2 == 'rz':
-        print('counter unitary exists')
-        qc.ry(np.pi/2, qargs1)
-
-    counter_unitary = Operator(qc).data
-    return counter_unitary
-
-def path_unitary(V1, V2, qargs1, qargs2, num_qubits, theta, t):
-    qc1 = QuantumCircuit(num_qubits)
-    args1 = (theta, *qargs1)
-    getattr(qc1, V1)(*args1)
-
-    qc2 = QuantumCircuit(num_qubits)
-    args2 = (theta, *qargs2)
-    getattr(qc2, V2)(*args2)
-
-    V1_theta_matrix = Operator(qc1).data
-    V2_theta_matrix = Operator(qc2).data
-
-    U_path = scipy.linalg.expm(t * scipy.linalg.logm(V2_theta_matrix @ V1_theta_matrix.conj().T))
-    #print(theta, t, np.linalg.norm(U_path - V1_theta_matrix), np.linalg.norm(U_path - V2_theta_matrix))
-    return U_path
-
 def _shape_distance_with_config(num_qubits, V1, V2, qargs1, qargs2, num_theta_samples=4, num_trials=500):
     '''
     Return the shape distance between two quantum gates
@@ -234,6 +201,16 @@ def _shape_distance_with_config(num_qubits, V1, V2, qargs1, qargs2, num_theta_sa
                                      np.linspace(lo_bound, up_bound, num_theta_samples, endpoint=False), anchor_states)
     print(spectrum_V1.shape, spectrum_V2.shape)
 
+    active_qubits = set(qargs1 + qargs2)
+    count_active = 0
+    for i in range(num_qubits):
+        if i in active_qubits:
+            count_active += 1
+    assert count_active == len(active_qubits)
+    active_d = 2**count_active
+    print('active qubits', active_qubits)
+    print('active dimension', active_d)
+
     tol = 10e-5
     m, T, d = spectrum_V1.shape
 
@@ -241,33 +218,21 @@ def _shape_distance_with_config(num_qubits, V1, V2, qargs1, qargs2, num_theta_sa
     for i in range(num_trials):
         #print(f'Trial {i+1}: ')
 
+        if i == 0:
+            perturbed_spectrum_V1 = spectrum_V1.copy()
 
-        if i > 0:
-            #random_U = random_unitary(2 ** num_qubits).data
-            #random_order = np.random.permutation(num_anchors)
-            #random_phases = np.random.uniform(0, 2 * np.pi, m * T)
-
-            #perturbed_spectrum_V1 = spectrum_V1[random_order].reshape(m * T, d)
-            #perturbed_spectrum_V1 = perturbed_spectrum_V1 * np.exp(1j * random_phases)[:, None]
-            #perturbed_spectrum_V1 = perturbed_spectrum_V1 @ random_U
-            #perturbed_spectrum_V1 = perturbed_spectrum_V1.reshape(m, T, d)
-
+            # perturbed_spectrum_V1 = perturbed_spectrum_V1.reshape(m*T,d) @ random_unitary(d).data
+            # perturbed_spectrum_V1 = perturbed_spectrum_V1.reshape(m,T,d)
+        else:
             random_order = np.random.permutation(num_anchors)
             perturbed_spectrum_V1 = spectrum_V1[random_order].reshape(m * T, d)
-            theta = np.random.uniform(0,2*np.pi)
-            t = np.random.rand()
-            perturbed_spectrum_V1 = perturbed_spectrum_V1 @ path_unitary(V1, V2, qargs1, qargs2, num_qubits, theta, t)
+
+            rand_unitary = np.kron(np.eye(int(d / active_d)), random_unitary(active_d).data)
+            #print(rand_unitary)
+            perturbed_spectrum_V1 = perturbed_spectrum_V1 @ rand_unitary
             perturbed_spectrum_V1 = perturbed_spectrum_V1.reshape(m, T, d)
 
-        # elif i == 1:
-        #     print('HELLO')
-        #     counter_unitary = get_counter_unitary(spectrum_V1, spectrum_V2, V1, V2, qargs1, qargs2)
-        #     perturbed_spectrum_V1 = spectrum_V1.reshape(m * T, d)
-        #     perturbed_spectrum_V1 = perturbed_spectrum_V1 @ counter_unitary
-        #     perturbed_spectrum_V1 = perturbed_spectrum_V1.reshape(m, T, d)
 
-        else:
-            perturbed_spectrum_V1 = spectrum_V1.copy()
 
         opt_val = optimization_routine(spectrum_V1=perturbed_spectrum_V1, spectrum_V2=spectrum_V2, tol=tol)
         opt_val_list.append(opt_val)
@@ -277,7 +242,7 @@ def _shape_distance_with_config(num_qubits, V1, V2, qargs1, qargs2, num_theta_sa
 
     opt_val_list = np.array(opt_val_list)
 
-    print(f'best = {opt_val_list.max()}, mean = {opt_val_list.mean()}, sample variance = {opt_val_list.var()}')
+    #print(f'best = {opt_val_list.max()}, mean = {opt_val_list.mean()}, sample variance = {opt_val_list.var()}')
 
     shape_distance = 1. - opt_val_list.max() / (m*T)
 
@@ -286,9 +251,7 @@ def _shape_distance_with_config(num_qubits, V1, V2, qargs1, qargs2, num_theta_sa
     else:
         return shape_distance
 
-
-
-def compute_shape_distance(V1: str, V2: str, num_qubits: int, num_theta_samples:int) -> dict:
+def compute_shape_distance(V1: str, V2: str, num_qubits: int, num_theta_samples:int, num_trials:int=500) -> dict:
     all_positions = gate_positioning.all_relative_positions(V1=V1, V2=V2, num_qubits=num_qubits)
     all_distances = {}
 
@@ -297,7 +260,7 @@ def compute_shape_distance(V1: str, V2: str, num_qubits: int, num_theta_samples:
             (V2 in SINGLE_QUBIT_VARIATIONAL_GATES or V2 in TWO_QUBIT_VARIATIONAL_GATES):
 
             all_distances[pos_tag] = _shape_distance_with_config(num_qubits=num_qubits, V1=V1, V2=V2, num_theta_samples=num_theta_samples,
-                                                             qargs1=qargs[0], qargs2=qargs[1])
+                                                             qargs1=qargs[0], qargs2=qargs[1], num_trials=num_trials)
         elif (V1 in SINGLE_QUBIT_DETERMINISTIC_GATES or V1 in TWO_QUBIT_DETERMINISTIC_GATES) and \
             (V2 in SINGLE_QUBIT_DETERMINISTIC_GATES or V2 in TWO_QUBIT_DETERMINISTIC_GATES):
 
@@ -329,7 +292,7 @@ def modify_shape_dist_dict(all_shape_distances):
             rev_dist = all_shape_distances[rev_pairname]
             #print(pairname, rev_pairname, qargs, rev_qargs, dist, rev_dist)
             #if not np.isclose(dist, rev_dist):
-            if ADMISSIBLE_GATES.index(V1) <= ADMISSIBLE_GATES.index(V2) and abs(dist - rev_dist) >= 0.05:
+            if ADMISSIBLE_GATES.index(V1) <= ADMISSIBLE_GATES.index(V2) and abs(dist - rev_dist) >= 0.001:
                 print(pairname, rev_pairname, qargs, rev_qargs, dist, rev_dist)
 
             all_shape_distances[pairname] = min(all_shape_distances[pairname], all_shape_distances[rev_pairname])
@@ -343,12 +306,12 @@ if __name__ == '__main__':
 
     num_theta_samples = 12
 
-    # print(compute_shape_distance('rx', 'rz', num_qubits=2, num_theta_samples=num_theta_samples))
+    #print(compute_shape_distance('rxx', 'rxx', num_qubits=4, num_theta_samples=num_theta_samples, num_trials=1000))
     # print(compute_shape_distance('rz', 'rx', num_qubits=2, num_theta_samples=num_theta_samples))
 
     import pickle
 
-    filename = './12theta_raw_all_shape_distances.pkl'
+    filename = './' + str(num_theta_samples) + 'theta_raw_all_shape_distances.pkl'
 
     try:
         with open(filename, 'rb') as f:
@@ -357,35 +320,60 @@ if __name__ == '__main__':
         with open(filename, 'wb') as f:
             ALL_SHAPE_DISTANCES = {}
             pickle.dump(ALL_SHAPE_DISTANCES, f)
-
-
-    for q in range(1,5):
-        for i,V1 in enumerate(ADMISSIBLE_GATES):
-            for j,V2 in enumerate(ADMISSIBLE_GATES):
-                if q == 1:
-                    if V1 in TWO_QUBIT_DETERMINISTIC_GATES or V1 in TWO_QUBIT_VARIATIONAL_GATES \
-                        or V2 in TWO_QUBIT_DETERMINISTIC_GATES or V2 in TWO_QUBIT_VARIATIONAL_GATES:
-                            continue ## not enough qubit
-
-                positions = gate_positioning.all_relative_positions(V1=V1, V2=V2, num_qubits=q)
-                if any([pos not in ALL_SHAPE_DISTANCES for pos in positions.keys()]):
-                    try:
-                        shape_distance = compute_shape_distance(V1,V2, num_qubits=q, num_theta_samples=num_theta_samples)
-                    except:
-                        continue
-                    else:
-                        ALL_SHAPE_DISTANCES.update(shape_distance)
-                        with open(filename, 'wb') as f:
-                            pickle.dump(ALL_SHAPE_DISTANCES, f)
-
-    print(len(ALL_SHAPE_DISTANCES))
-    print(ALL_SHAPE_DISTANCES)
-    with open(filename, 'rb') as f:
-        loaded_dict = pickle.load(f)
-        print(loaded_dict == ALL_SHAPE_DISTANCES)
+    #
+    #
+    # for q in [1,2,3,4]:
+    #     for i,V1 in enumerate(ADMISSIBLE_GATES):
+    #         for j,V2 in enumerate(ADMISSIBLE_GATES):
+    #             if q == 1:
+    #                 if V1 in TWO_QUBIT_DETERMINISTIC_GATES or V1 in TWO_QUBIT_VARIATIONAL_GATES \
+    #                     or V2 in TWO_QUBIT_DETERMINISTIC_GATES or V2 in TWO_QUBIT_VARIATIONAL_GATES:
+    #                         continue ## not enough qubit
+    #
+    #             positions = gate_positioning.all_relative_positions(V1=V1, V2=V2, num_qubits=q)
+    #             if any([pos not in ALL_SHAPE_DISTANCES for pos in positions.keys()]):
+    #                 try:
+    #                     shape_distance = compute_shape_distance(V1,V2, num_qubits=q, num_theta_samples=num_theta_samples)
+    #                 except:
+    #                     continue
+    #                 else:
+    #                     ALL_SHAPE_DISTANCES.update(shape_distance)
+    #                     with open(filename, 'wb') as f:
+    #                         pickle.dump(ALL_SHAPE_DISTANCES, f)
+    #
+    # print(len(ALL_SHAPE_DISTANCES))
+    # print(ALL_SHAPE_DISTANCES)
+    # with open(filename, 'rb') as f:
+    #     loaded_dict = pickle.load(f)
+    #     print(loaded_dict == ALL_SHAPE_DISTANCES)
 
 
     ## Modify
     ALL_SHAPE_DISTANCES = modify_shape_dist_dict(ALL_SHAPE_DISTANCES)
     with open(filename, 'wb') as f:
         pickle.dump(ALL_SHAPE_DISTANCES, f)
+
+    # V1 = 'rx'
+    # V2 = 'ry'
+    # num_qubits = 3
+    # rel_pos = 's'
+    # all_positions = gate_positioning.all_relative_positions(V1=V1, V2=V2, num_qubits=num_qubits)
+    #
+    # print(all_positions)
+    # pos = '_'.join([V1,V2,str(num_qubits),rel_pos])
+    # print(pos)
+    # two_qargs = all_positions[pos]
+    # dshape = _shape_distance_with_config(num_qubits=num_qubits, V1=V1, V2=V2, num_theta_samples=num_theta_samples,
+    #                             qargs1=two_qargs[0], qargs2=two_qargs[1], num_trials=1000)
+    # print(dshape)
+    #
+    # with open(filename, 'rb') as f:
+    #     ALL_SHAPE_DISTANCES = pickle.load(f)
+    #
+    # if dshape <= ALL_SHAPE_DISTANCES[pos]:
+    #     ALL_SHAPE_DISTANCES[pos] = dshape
+    #
+    # with open(filename, 'wb') as f:
+    #     pickle.dump(ALL_SHAPE_DISTANCES, f)
+
+

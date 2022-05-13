@@ -89,15 +89,6 @@ class MAXCUT_objective():
         self.opt_cut_vals = [self.classical_maxcut(G)[0] for G in self.graphs]
         self.sum_opt_cut_val = sum(self.opt_cut_vals)
 
-    # def define_maxcut_problem(self):
-    #     n = 3
-    #     V = np.arange(0, n, 1)
-    #     #E = [(0, 1, 10.0), (0, 2, 5.0), (1, 2, 3.0), (1, 3, 10.0),(2, 3, 7.0)]
-    #     E = [(0, 1, 10.0), (0, 2, 10.0), (1, 2, 9)]
-    #     G = nx.Graph()
-    #     G.add_nodes_from(V)
-    #     G.add_weighted_edges_from(E)
-    #     return self.maxcut_hamiltonian(G)
     def compute_cut_value(self, G, partitions):
         """
         Return list of cut weights corresponding to input partitions
@@ -166,8 +157,8 @@ class MAXCUT_objective():
         for i in range(num_graphs):
             G = G_form.copy()
             for (u, v) in G.edges():
-                #G.edges[u, v]['weight'] = np.random.randint(0, 10)
-                G.edges[u, v]['weight'] = np.random.rand()
+                G.edges[u, v]['weight'] = np.random.randint(0, 10)
+                #G.edges[u, v]['weight'] = np.random.rand()
             graphs.append(G)
         return graphs
 
@@ -229,12 +220,12 @@ class MAXCUT_objective():
             return 1.
 
         if PQC.num_parameters > 0:
-            sum_exp_val = 0.
+            sum_performance = 0.
             for idx in range(len(graphs)):
                 initial_guess = np.random.uniform(0,2*np.pi,PQC.num_parameters)
                 result = minimize(maxcut_obj_single, initial_guess, args=(idx))
-                sum_exp_val += result.fun
-            return -sum_exp_val / sum_opt_cut_val
+                sum_performance += result.fun / opt_cut_vals[idx]
+            return -sum_performance / len(graphs)
         else:
             sum_exp_val = 0
             for idx in range(len(graphs)):
