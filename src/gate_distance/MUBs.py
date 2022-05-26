@@ -234,31 +234,7 @@ def get_anchor_states(num_qubits):
 
 
 if __name__ == '__main__':
-    # n = 4
-    # MUBs = _even_char_MUBs(2,n)
-    # MUBs = MUBs.reshape(-1,2**n)
-    # print(MUBs.shape)
-    # d = MUBs.shape[1]
-    # bases = np.split(MUBs, d + 1)
-    # for m, basis1 in enumerate(bases):
-    #     # check intra basis
-    #     for i, vec1 in enumerate(basis1):
-    #         for j, vec2 in enumerate(basis1):
-    #             f = abs(vec1.conj().T @ vec2) ** 2
-    #             # print(f)
-    #             assert np.isclose(f, 0.) or np.isclose(f, 1.)
-    #
-    #     # check inter basis
-    #     for n, basis2 in enumerate(bases):
-    #         if n > m:  # different basis
-    #             for i, vec1 in enumerate(basis1):
-    #                 for j, vec2 in enumerate(basis2):
-    #                     f = abs(vec1.conj().T @ vec2) ** 2
-    #                     #print(f)
-    #                     assert np.isclose(f, 1. / d)
-    # print(MUBs)
-
-    generate_anchor_states([1,2,3,4,5])
+    generate_anchor_states(num_qubit_list=[1,2,3,4,5])
     print(get_anchor_states(1))
     print(get_anchor_states(2))
 

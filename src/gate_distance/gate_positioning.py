@@ -227,12 +227,3 @@ def get_pos_from_gate_DAGobj(node1:DAGNode, node2:DAGNode) -> dict:
     qarg2 = [qubit.index for qubit in node2.qargs]
     qargs = [qarg1, qarg2]
     return get_pos_from_gate_name(V1, V2, qargs)
-
-if __name__ == '__main__':
-    print(all_relative_positions('h','rxx',2))
-    print(all_relative_positions('h','rxx',3))
-    print(all_relative_positions('h','rxx',4))
-
-    print(all_relative_positions('rxx', 'h', 2))
-    print(all_relative_positions('rxx', 'h', 3))
-    print(all_relative_positions('rxx', 'h', 4))

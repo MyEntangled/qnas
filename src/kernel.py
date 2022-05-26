@@ -2,12 +2,6 @@ import gpytorch
 import torch
 import numpy as np
 
-from gpytorch.mlls.exact_marginal_log_likelihood import ExactMarginalLogLikelihood
-from gpytorch.models import ExactGP
-from gpytorch.means import ConstantMean
-from gpytorch.distributions import MultivariateNormal
-from gpytorch.likelihoods import GaussianLikelihood
-
 from QuOTMANN import optimal_transport, structural_cost
 
 class CircuitDistKernel(gpytorch.kernels.Kernel):

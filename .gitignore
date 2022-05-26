@@ -22,3 +22,7 @@ optimization_loop.py
 output/*
 output_sang/*
 output_test/*
+src/gate_distance/shape_distance.py
+src/gate_distance/shape_distance_v3.py
+src/gate_distance/shape_distance_v4.py
+src/in_development

@@ -14,8 +14,11 @@ $ python src/main.py -obj qft -n 2 -no 6 -init 5 -T 2 -B 2 -S 1 -s 6789 -dir out
 
 And then run example scripts, such as:
 ```bash
-$ python src/main.py -obj qgan -n 3 -no 12 -init 5 -T 5 -B 30 -S 1 -s 6789 -dir output --gpuid 0
+$ python src/main.py -obj qgan -n 3 -no 12 -init 5 -T 3 -B 25 -S 1 -s 6789 -dir output --gpuid 0
 ```
 ```bash
-$ python src/main.py -obj qft -n 3 -no 14 -init 5 -T 5 -B 30 -S 1 -s 6789 -dir output --gpuid 0
+$ python src/main.py -obj qft -n 3 -no 14 -init 5 -T 3 -B 25 -S 1 -s 6789 -dir output --gpuid 0
+```
+```bash
+$ python src/main.py -obj maxcut -n 9 -no 5 -init 5 -T 3 -B 25 -S 1 -s 6789 -dir output --gpuid 0
 ```

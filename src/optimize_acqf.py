@@ -24,11 +24,6 @@ def warm_init(acq_func, bounds, encoding_length, batch_size, raw_samples):
     X = initialize_q_batch(Xraw, Yraw, 5)
     return X.to(bounds)
 
-# def shufflerow(tensor, axis):
-#     row_perm = torch.rand(tensor.shape[:axis+1]).argsort(axis)  # get permutation indices
-#     for _ in range(tensor.ndim-axis-1): row_perm.unsqueeze_(-1)
-#     row_perm = row_perm.repeat(*[1 for _ in range(axis+1)], *(tensor.shape[axis+1:]))  # reformat this for the gather operation
-#     return tensor.gather(axis, row_perm)
 
 def EA_optimize(acq_func, X0, num_qubits, num_gates, num_iters, num_offsprings, k=5, num_candidates=1):
     X = X0.squeeze(1).view(-1, num_qubits+1, num_gates)

@@ -158,25 +158,3 @@ def enc_to_qc_torch(num_qubits: int, encoding: torch.tensor) -> QuantumCircuit:
             pass
 
     return qc
-
-# if __name__ == '__main__':
-#     qc = QuantumCircuit(4)
-#     qc.cx(0,1)
-#     qc.cx(3,2)
-#     qc.cx(1,2)
-#     qc.cx(2,3)
-#     qc.cx(1,0)
-#     print(qc.draw())
-#
-#     encoding = qc_to_enc(qc, MAX_OP_NODES=None)
-#     print(encoding.reshape(5,5))
-#
-#     rec_qc = enc_to_qc(4, encoding)
-#
-#     print(rec_qc.draw())
-#
-#     np.random.seed(10)
-#     rand_encoding = np.random.standard_normal((5,5))
-#     print(rand_encoding)
-#     rand_rec_qc = enc_to_qc(4, rand_encoding)
-#     print(rand_rec_qc.draw())

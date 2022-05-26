@@ -410,14 +410,13 @@ def compute_shape_distance_no_qubit_order(V1: str, V2: str, num_qubits: int, num
 
 import sys
 import pickle
-sys.path.append('/Users/erio/Dropbox/URP project/Code/PQC_composer')
 np.random.seed(20)
 
 num_theta_samples = 12
 
 #print(compute_shape_distance('rz', 'crz', num_qubits=4, num_theta_samples=12, num_trials=10))
 
-filename = './' + str(num_theta_samples) + 'newnew_theta_raw_all_shape_distances.pkl'
+filename = './' + str(num_theta_samples) + 'all_shape_distances.pkl'
 
 
 # ALL_SHAPE_DISTANCES = {}
